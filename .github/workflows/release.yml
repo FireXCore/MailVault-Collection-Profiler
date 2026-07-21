@@ -1,0 +1,185 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-release:
+    name: Windows release
+    runs-on: windows-latest
+    timeout-minutes: 75
+
+    # Creating/updating a GitHub Release requires contents: write.
+    # id-token and attestations are used only for provenance generation.
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Validate tag and release configuration
+        shell: pwsh
+        run: |
+          npm run check:release-config
+          node scripts/check-tag-version.cjs "${{ github.ref_name }}"
+          npm run check:docs
+
+      - name: Run complete Windows quality gate
+        shell: pwsh
+        run: ./scripts/quality.ps1
+
+      - name: Load versioned release notes
+        id: release-notes
+        shell: pwsh
+        run: |
+          $path = "docs/releases/${{ github.ref_name }}.md"
+          if (-not (Test-Path $path)) {
+            throw "Missing release notes: $path"
+          }
+
+          "body<<__MAILVAULT_RELEASE_NOTES__" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Get-Content -Raw $path |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "__MAILVAULT_RELEASE_NOTES__" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      # This fails before the expensive Tauri release build when the token cannot
+      # create releases. RELEASE_TOKEN is an optional fine-grained PAT fallback.
+      - name: Create or verify draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $repository = "${{ github.repository }}"
+          $notesPath = "docs/releases/$tag.md"
+          $title = "MailVault Collection Profiler $tag"
+
+          gh release view $tag --repo $repository *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Draft release already exists for $tag."
+            exit 0
+          }
+
+          $arguments = @(
+            "release", "create", $tag,
+            "--repo", $repository,
+            "--draft",
+            "--title", $title,
+            "--notes-file", $notesPath
+          )
+
+          if ($tag.Contains("-")) {
+            $arguments += "--prerelease"
+          }
+
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) {
+            $message = @(
+              "GitHub Release creation failed.",
+              "Required permission: contents: write.",
+              "Repository setting: Settings > Actions > General > Workflow permissions > Read and write permissions.",
+              "If organization policy blocks write-enabled GITHUB_TOKEN usage, add a fine-grained PAT with Contents: Read and write as RELEASE_TOKEN."
+            ) -join " "
+            throw $message
+          }
+
+      - name: Build installers and upload to draft release
+        uses: tauri-apps/tauri-action@v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: MailVault Collection Profiler ${{ github.ref_name }}
+          releaseBody: ${{ steps.release-notes.outputs.body }}
+          releaseDraft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          args: --bundles nsis,msi
+          releaseAssetNamePattern: MailVault-Collection-Profiler_[version]_[arch][setup][ext]
+          uploadUpdaterJson: false
+          uploadUpdaterSignatures: false
+          uploadPlainBinary: false
+          uploadWorkflowArtifacts: false
+
+      # Preserve successfully built installers even if a later release/API step fails.
+      - name: Preserve Windows installers as workflow artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MailVault-Collection-Profiler_${{ github.ref_name }}_windows-x64
+          path: |
+            target/release/bundle/**/*.exe
+            target/release/bundle/**/*.msi
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Generate SHA-256 manifest
+        shell: pwsh
+        run: |
+          $artifacts = Get-ChildItem "target/release/bundle" -Recurse -File |
+            Where-Object { $_.Extension -in @(".exe", ".msi") } |
+            Sort-Object Name
+
+          if (-not $artifacts) {
+            throw "No NSIS or MSI artifacts were produced."
+          }
+
+          $lines = foreach ($artifact in $artifacts) {
+            $hash = (Get-FileHash $artifact.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($artifact.Name)"
+          }
+
+          $lines | Set-Content -Path "SHA256SUMS.txt" -Encoding ascii
+          Get-Content "SHA256SUMS.txt"
+
+      - name: Upload checksum manifest to draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+        run: |
+          gh release upload "${{ github.ref_name }}" "SHA256SUMS.txt" --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw "Uploading SHA256SUMS.txt to the draft release failed."
+          }
+
+      - name: Attest release artifacts
+        if: github.event.repository.visibility == 'public'
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            target/release/bundle/**/*.exe
+            target/release/bundle/**/*.msi
+            SHA256SUMS.txt

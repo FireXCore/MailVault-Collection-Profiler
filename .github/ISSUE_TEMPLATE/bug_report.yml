@@ -1,0 +1,93 @@
+name: Bug report
+description: Report a reproducible defect without attaching private MailVault data.
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not upload real archives, EML files, attachments, profiler databases, evidence bundles, email addresses, subjects, customer names, API keys, certificates, or unredacted screenshots.
+
+  - type: input
+    id: version
+    attributes:
+      label: Application version
+      description: Copy the version from the application or release page.
+      placeholder: 0.1.0-alpha.3
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Desktop GUI
+        - CLI preflight
+        - CLI profile
+        - Evidence wrapper
+        - Installer / packaging
+        - Build from source
+        - Documentation
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Windows 11 24H2 x64
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: State the observable result that should have occurred.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: State the exact error and stage. Redact paths and archive-derived metadata.
+      placeholder: |
+        Stage: snapshot
+        Error: <redacted>
+        Exit code: 1
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Use a synthetic fixture or sanitized demo path.
+      placeholder: |
+        1. Run read-only preflight against D:\MailVault-Demo
+        2. Select D:\MailVault-Profiler-Workspace
+        3. Start the profile
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Paste only the minimum relevant lines. Replace private values with <redacted>.
+      render: text
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Data-safety confirmation
+      options:
+        - label: I removed real email addresses, subjects, filenames, customer names, local usernames, volume labels, and private paths.
+          required: true
+        - label: I did not attach an archive, EML file, attachment, profiler database, or evidence bundle.
+          required: true
+        - label: The source archive was not modified while reproducing this issue.
+          required: true

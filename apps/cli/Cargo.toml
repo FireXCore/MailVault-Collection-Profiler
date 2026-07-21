@@ -1,0 +1,26 @@
+[package]
+name = "mailvault-profiler-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Headless MailVault Collection Profiler diagnostics."
+
+[[bin]]
+name = "mailvault-profiler"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+profiler-adapter-mailvault = { path = "../../crates/profiler-adapter-mailvault" }
+profiler-core = { path = "../../crates/profiler-core" }
+profiler-engine = { path = "../../crates/profiler-engine" }
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

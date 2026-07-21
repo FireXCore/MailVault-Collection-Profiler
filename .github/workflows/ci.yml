@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-core:
+    name: Rust core
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint non-desktop workspace
+        run: cargo clippy --workspace --all-targets --all-features --exclude mailvault-profiler-desktop --locked -- -D warnings
+
+      - name: Test non-desktop workspace
+        run: cargo test --workspace --all-features --exclude mailvault-profiler-desktop --locked
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Validate release configuration
+        run: npm run check:release-config
+
+      - name: Validate Rust syntax with Tree-sitter WASM
+        run: npm run check:rust-syntax
+
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Build frontend
+        run: npm run build
+
+  desktop-windows:
+    name: Windows desktop
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run Windows snapshot pipeline regression
+        run: cargo test -p profiler-engine --test profile_pipeline --locked -- --nocapture
+
+      - name: Lint every desktop target
+        run: cargo clippy --package mailvault-profiler-desktop --all-targets --all-features --locked -- -D warnings
+
+      - name: Build desktop frontend
+        run: npm run build
+
+  documentation:
+    name: Documentation and privacy scrub
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Check documentation links, required assets and privacy markers
+        run: npm run check:docs

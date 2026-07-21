@@ -1,0 +1,36 @@
+[package]
+name = "mailvault-profiler-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Tauri desktop application for MailVault Collection Profiler."
+build = "build.rs"
+
+[lib]
+name = "mailvault_profiler_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "mailvault-profiler"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+profiler-adapter-mailvault = { path = "../../../crates/profiler-adapter-mailvault" }
+profiler-core = { path = "../../../crates/profiler-core" }
+profiler-engine = { path = "../../../crates/profiler-engine" }
+profiler-storage-sqlite = { path = "../../../crates/profiler-storage-sqlite" }
+serde.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

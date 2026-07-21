@@ -1,0 +1,25 @@
+[package]
+name = "profiler-adapter-mailvault"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Read-only MailVault archive adapter for MailVault Collection Profiler."
+
+[dependencies]
+fs2.workspace = true
+hex.workspace = true
+profiler-core = { path = "../profiler-core" }
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+time.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

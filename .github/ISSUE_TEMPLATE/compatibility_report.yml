@@ -1,0 +1,69 @@
+name: MailVault compatibility report
+description: Report a sanitized preflight compatibility result for a MailVault schema or layout.
+title: "[Compatibility]: schema "
+labels: ["compatibility", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never attach the database or archive. Report only sanitized preflight facts and structural capability results.
+
+  - type: input
+    id: profiler-version
+    attributes:
+      label: Profiler version
+      placeholder: 0.1.0-alpha.3
+    validations:
+      required: true
+
+  - type: input
+    id: mailvault-version
+    attributes:
+      label: MailVault version or build
+      description: Use unknown when no reliable package version exists.
+      placeholder: 2.x / unknown
+    validations:
+      required: true
+
+  - type: input
+    id: schema-version
+    attributes:
+      label: Schema version
+      placeholder: v3
+    validations:
+      required: true
+
+  - type: dropdown
+    id: result
+    attributes:
+      label: Preflight result
+      options:
+        - Compatible
+        - Incompatible
+        - Blocked by writer lock
+        - Failed before contract evaluation
+    validations:
+      required: true
+
+  - type: textarea
+    id: checks
+    attributes:
+      label: Sanitized failed or warning checks
+      description: Include check identifiers and messages, not rows or private values.
+      render: text
+
+  - type: textarea
+    id: layout
+    attributes:
+      label: Sanitized layout notes
+      description: Describe required directories or naming differences using placeholders.
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: No database, archive, EML, attachment, or evidence bundle is attached.
+          required: true
+        - label: All usernames, drive labels, paths, addresses, subjects, domains, and filenames are sanitized.
+          required: true

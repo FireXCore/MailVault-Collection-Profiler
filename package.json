@@ -1,0 +1,40 @@
+{
+  "name": "mailvault-profiler-workspace",
+  "private": true,
+  "version": "0.1.0-alpha.3",
+  "workspaces": [
+    "apps/desktop"
+  ],
+  "scripts": {
+    "dev": "npm --workspace @firexcore/mailvault-profiler-desktop run dev",
+    "build": "npm --workspace @firexcore/mailvault-profiler-desktop run build",
+    "type-check": "npm --workspace @firexcore/mailvault-profiler-desktop run type-check",
+    "tauri": "npm --workspace @firexcore/mailvault-profiler-desktop run tauri --",
+    "tauri:desktop:build": "npm --workspace @firexcore/mailvault-profiler-desktop run tauri -- build",
+    "tauri:desktop:bundle": "npm --workspace @firexcore/mailvault-profiler-desktop run tauri -- build --bundles nsis,msi",
+    "check:rust-syntax": "node scripts/check-rust-syntax.cjs",
+    "check:release-config": "node scripts/check-release-config.cjs",
+    "check:docs": "node scripts/check-docs.cjs",
+    "check:tag": "node scripts/check-tag-version.cjs",
+    "quality": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/quality.ps1"
+  },
+  "engines": {
+    "node": ">=24.0.0 <25.0.0",
+    "npm": ">=11.0.0"
+  },
+  "devDependencies": {
+    "@vscode/tree-sitter-wasm": "^0.3.1",
+    "web-tree-sitter": "^0.26.11"
+  },
+  "description": "Local-first, read-only physical inventory and technical evidence explorer for MailVault archives.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FireXCore/mailvault-collection-profiler.git"
+  },
+  "homepage": "https://github.com/FireXCore/mailvault-collection-profiler#readme",
+  "bugs": {
+    "url": "https://github.com/FireXCore/mailvault-collection-profiler/issues"
+  },
+  "packageManager": "npm@11.18.0"
+}

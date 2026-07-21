@@ -1,0 +1,105 @@
+pub const SUPPORTED_SCHEMA_MIN: u32 = 3;
+pub const SUPPORTED_SCHEMA_MAX: u32 = 3;
+
+pub const REQUIRED_TABLES: &[(&str, &[&str])] = &[
+    ("schema_meta", &["key", "value"]),
+    (
+        "accounts",
+        &["id", "archive_id", "email", "host", "port", "provider_kind"],
+    ),
+    (
+        "messages",
+        &[
+            "id",
+            "archive_id",
+            "account_id",
+            "provider_thread_namespace",
+            "provider_thread_value",
+            "rfc_message_id",
+            "subject_raw",
+            "subject_normalized",
+            "header_date",
+            "raw_path",
+            "raw_sha256",
+            "raw_size_bytes",
+            "parse_defects_json",
+        ],
+    ),
+    (
+        "message_occurrences",
+        &[
+            "id",
+            "message_id",
+            "generation_id",
+            "uid",
+            "labels_json",
+            "internal_date",
+            "fetch_status",
+        ],
+    ),
+    (
+        "message_participants",
+        &[
+            "id",
+            "message_id",
+            "role",
+            "ordinal",
+            "name",
+            "address",
+            "domain",
+        ],
+    ),
+    (
+        "message_parts",
+        &[
+            "id",
+            "message_id",
+            "part_path",
+            "parent_part_path",
+            "role",
+            "declared_mime_type",
+            "detected_mime_type",
+            "content_disposition",
+            "content_id",
+            "filename_original",
+            "filename_safe",
+            "charset",
+            "transfer_encoding",
+            "size_bytes",
+            "sha256",
+            "blob_path",
+            "defects_json",
+        ],
+    ),
+    (
+        "blobs",
+        &[
+            "sha256",
+            "size_bytes",
+            "detected_mime_type",
+            "storage_path",
+            "first_seen_at",
+            "last_verified_at",
+        ],
+    ),
+    (
+        "message_relations",
+        &[
+            "id",
+            "source_message_id",
+            "target_message_id",
+            "relation_type",
+            "evidence_type",
+            "confidence",
+            "created_at",
+        ],
+    ),
+];
+
+pub const RECOMMENDED_INDEXES: &[&str] = &[
+    "idx_messages_thread",
+    "idx_occurrence_message",
+    "idx_participants_domain",
+    "idx_parts_sha",
+    "idx_parts_role",
+];

@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+title: MailVault Collection Profiler
+message: If you use this software in research or preservation work, cite the software and release.
+type: software
+authors:
+  - name: FireXCore
+repository-code: https://github.com/FireXCore/mailvault-collection-profiler
+url: https://github.com/FireXCore/mailvault-collection-profiler
+version: 0.1.0-alpha.3
+date-released: 2026-07-19
+license: Apache-2.0
+abstract: >-
+  A local-first, read-only desktop and CLI profiler for building a reproducible physical inventory
+  and technical evidence model of MailVault archives.
+keywords:
+  - digital preservation
+  - email archive
+  - evidence
+  - Rust
+  - Tauri
+  - SQLite

@@ -1,0 +1,48 @@
+# Rust
+/target/
+**/target/
+
+# Node / frontend
+/node_modules/
+**/node_modules/
+/dist/
+**/dist/
+*.tsbuildinfo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.pfx
+*.p12
+*.key
+
+# Runtime evidence and private archives
+/runtime-evidence/
+/evidence/
+/private-evidence/
+*.sqlite
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+*.db
+*.eml
+
+# Local profiling workspaces
+MailVault-Profiler-Workspace/
+MailVault-Profiler-Evidence/
+MailVault-Alpha*-Test/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.partial
+*.bak
+*.log

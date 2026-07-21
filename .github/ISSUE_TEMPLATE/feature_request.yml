@@ -1,0 +1,73 @@
+name: Feature request
+description: Propose a bounded capability that preserves the read-only evidence contract.
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the user problem before proposing an implementation. Features that mutate the canonical archive, execute attachments, or require uploading archive data are outside the project contract.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What technical or operational problem remains unsolved?
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Required outcome
+      description: Define the observable result and acceptance criteria.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Preflight compatibility
+        - Snapshot and resumability
+        - Inventory and reconciliation
+        - Physical verification
+        - Findings and evidence
+        - Desktop explorer
+        - CLI and automation
+        - Packaging and updates
+        - Documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: safety
+    attributes:
+      label: Read-only and privacy impact
+      description: Describe source mutation risk, new data written to the workspace, and any derived metadata exposure.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scale
+    attributes:
+      label: Scale and performance expectations
+      description: Include collection size, object count, latency or memory constraints using synthetic or rounded values.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+
+  - type: checkboxes
+    id: contract
+    attributes:
+      label: Contract confirmation
+      options:
+        - label: The proposal keeps the canonical archive read-only.
+          required: true
+        - label: The proposal does not execute, render, extract, or upload attachment payloads.
+          required: true
+        - label: The proposal can be tested with synthetic fixtures.
+          required: true
