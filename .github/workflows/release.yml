@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+      - "!v*-runtime-green"
 
 permissions:
   contents: read
