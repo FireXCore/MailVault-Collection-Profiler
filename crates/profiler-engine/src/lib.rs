@@ -1,4 +1,5 @@
 mod file_stat;
+pub mod format;
 pub mod workspace;
 
 use std::{fs, path::PathBuf};
@@ -14,6 +15,8 @@ use profiler_storage_sqlite::ProfilerStore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
+
+pub use format::ExactFormatEngine;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

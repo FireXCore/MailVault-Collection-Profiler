@@ -3,13 +3,15 @@ use std::{path::PathBuf, str::FromStr, sync::Mutex};
 use profiler_adapter_mailvault::MailVaultAdapter;
 use profiler_core::{
     ActiveRunContext, CollectionAdapter, ContentObjectDetail, ErrorReport, FindingCategory,
-    FindingDetail, FindingReviewHistory, FindingsPage, FindingsPageRequest, InventoryFilters,
-    InventoryPage, InventoryPageRequest, OpenWorkspaceResult, PreflightReport, ProfilerError,
-    ProfilerResult, ProgressEvent, ProgressSink, ReviewActorKind, ReviewStatus, RunCatalogEntry,
-    SnapshotOptions, SnapshotRequest, SnapshotResult, WorkspaceInspection, WorkspaceOpenMode,
+    FindingDetail, FindingReviewHistory, FindingsPage, FindingsPageRequest, FormatFilters,
+    FormatIdentificationRequest, FormatIdentificationResult, FormatOptions, FormatPage,
+    FormatPageRequest, FormatSummary, FormatToolIdentity, InventoryFilters, InventoryPage,
+    InventoryPageRequest, OpenWorkspaceResult, PreflightReport, ProfilerError, ProfilerResult,
+    ProgressEvent, ProgressSink, ReviewActorKind, ReviewStatus, RunCatalogEntry, SnapshotOptions,
+    SnapshotRequest, SnapshotResult, WorkspaceInspection, WorkspaceOpenMode,
 };
 use profiler_engine::{
-    ProfileEngine, ProfileOptions, ProfileRequest, ProfileResult,
+    ExactFormatEngine, ProfileEngine, ProfileOptions, ProfileRequest, ProfileResult,
     workspace::{
         WorkspaceContext, WorkspaceSession, add_review_note, clear_review_status,
         export_sanitized_run, finding_detail, findings_page as query_findings_page,
@@ -17,7 +19,7 @@ use profiler_engine::{
     },
 };
 use serde::Deserialize;
-use tauri::{State, ipc::Channel};
+use tauri::{AppHandle, Manager, State, ipc::Channel};
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
@@ -30,6 +32,27 @@ struct FindingsPageCommandRequest {
     search: Option<String>,
     after_id: Option<String>,
     limit: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FormatPageCommandRequest {
+    search: Option<String>,
+    state: Option<profiler_core::FormatState>,
+    puid: Option<String>,
+    mismatch_only: bool,
+    after_sha256: Option<String>,
+    limit: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FormatIdentifyCommandRequest {
+    siegfried_path: Option<String>,
+    batch_size: u32,
+    workers: u32,
+    timeout_seconds: u64,
+    resume: bool,
 }
 
 struct ChannelProgressSink {
@@ -442,6 +465,144 @@ async fn add_finding_review_note(
     .map_err(|error| error.report())
 }
 
+fn bundled_siegfried_paths(app: &AppHandle) -> ProfilerResult<(Option<PathBuf>, Option<PathBuf>)> {
+    let resource_root = app.path().resource_dir().map_err(|error| {
+        ProfilerError::Internal(format!("resolving application resource directory: {error}"))
+    })?;
+    let directory = resource_root.join("tools").join("siegfried");
+    let executable = directory.join(if cfg!(windows) { "sf.exe" } else { "sf" });
+    let signature = directory.join("default.sig");
+    Ok((
+        executable.is_file().then_some(executable),
+        signature.is_file().then_some(signature),
+    ))
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn probe_format_tool(
+    siegfried_path: Option<String>,
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+) -> Result<FormatToolIdentity, ErrorReport> {
+    let _ = state.context().map_err(|error| error.report())?;
+    let (bundled_executable, bundled_signature) =
+        bundled_siegfried_paths(&app).map_err(|error| error.report())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        ExactFormatEngine.probe_tool(
+            siegfried_path.map(PathBuf::from).or(bundled_executable),
+            bundled_signature,
+            0,
+        )
+    })
+    .await
+    .map_err(|error| {
+        ProfilerError::Internal(format!("format-tool probe failed: {error}")).report()
+    })?
+    .map_err(|error| error.report())
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn identify_formats(
+    request: FormatIdentifyCommandRequest,
+    on_event: Channel<ProgressEvent>,
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+) -> Result<FormatIdentificationResult, ErrorReport> {
+    let context = state.context().map_err(|error| error.report())?;
+    let active = state.active_run().map_err(|error| error.report())?;
+    context.open_writer().map_err(|error| error.report())?;
+    let archive_root = match context.source_roots.as_slice() {
+        [root] => root.clone(),
+        [] => {
+            return Err(ProfilerError::IncompatibleSource(
+                "workspace has no MailVault source root".into(),
+            )
+            .report());
+        }
+        _ => {
+            return Err(ProfilerError::IncompatibleSource(
+                "workspace contains multiple source roots".into(),
+            )
+            .report());
+        }
+    };
+    let (bundled_executable, bundled_signature) =
+        bundled_siegfried_paths(&app).map_err(|error| error.report())?;
+    let format_request = FormatIdentificationRequest {
+        baseline_run_id: active.run.run_id,
+        workspace_root: context.root_path,
+        profiler_database: context.profiler_database,
+        archive_root,
+        siegfried_path: request
+            .siegfried_path
+            .map(PathBuf::from)
+            .or(bundled_executable),
+        signature_path: bundled_signature,
+        options: FormatOptions {
+            batch_size: request.batch_size,
+            workers: request.workers,
+            timeout_seconds: request.timeout_seconds,
+            resume: request.resume,
+        },
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        ExactFormatEngine.identify(&format_request, &ChannelProgressSink { channel: on_event })
+    })
+    .await
+    .map_err(|error| {
+        ProfilerError::Internal(format!("format-identification worker failed: {error}")).report()
+    })?
+    .map_err(|error| error.report())
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn format_summary(state: State<'_, DesktopState>) -> Result<FormatSummary, ErrorReport> {
+    let context = state.context().map_err(|error| error.report())?;
+    let active = state.active_run().map_err(|error| error.report())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        ExactFormatEngine.summary(&context.profiler_database, &active.run.run_id)
+    })
+    .await
+    .map_err(|error| {
+        ProfilerError::Internal(format!("format-summary worker failed: {error}")).report()
+    })?
+    .map_err(|error| error.report())
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+async fn format_page(
+    request: FormatPageCommandRequest,
+    state: State<'_, DesktopState>,
+) -> Result<FormatPage, ErrorReport> {
+    let context = state.context().map_err(|error| error.report())?;
+    let active = state.active_run().map_err(|error| error.report())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        ExactFormatEngine.page(
+            &context.profiler_database,
+            &FormatPageRequest {
+                baseline_run_id: active.run.run_id,
+                filters: FormatFilters {
+                    search: request.search,
+                    state: request.state,
+                    puid: request.puid,
+                    mismatch_only: request.mismatch_only,
+                },
+                after_sha256: request.after_sha256,
+                limit: request.limit,
+            },
+        )
+    })
+    .await
+    .map_err(|error| {
+        ProfilerError::Internal(format!("format-page worker failed: {error}")).report()
+    })?
+    .map_err(|error| error.report())
+}
+
 #[tauri::command]
 async fn export_sanitized_summary(
     run_id: String,
@@ -490,6 +651,10 @@ pub fn run() {
             set_finding_review_status,
             clear_finding_review_status,
             add_finding_review_note,
+            probe_format_tool,
+            identify_formats,
+            format_summary,
+            format_page,
             export_sanitized_summary
         ])
         .run(tauri::generate_context!())

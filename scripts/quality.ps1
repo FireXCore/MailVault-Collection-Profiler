@@ -61,6 +61,15 @@ Invoke-CheckedNative -FilePath $npmExecutable -ArgumentList @("run", "check:rust
 Invoke-CheckedNative -FilePath $npmExecutable -ArgumentList @("run", "type-check")
 Invoke-CheckedNative -FilePath $npmExecutable -ArgumentList @("run", "build")
 
+# The native desktop bundle includes a pinned Siegfried/PRONOM runtime. Acquire and
+# verify it before compiling the Tauri context, because bundle resources are part of
+# the release contract rather than an optional developer dependency.
+if ($env:OS -eq "Windows_NT") {
+    # PowerShell scripts report failure through terminating errors. Do not read
+    # $LASTEXITCODE here: it is owned by native executables and may be stale.
+    & (Join-Path $PSScriptRoot "install-siegfried.ps1")
+}
+
 # The core Rust gate intentionally excludes the native Tauri crate so the same
 # workspace can be validated on hosts without desktop system libraries. This
 # Windows gate runs after the frontend build and must compile every desktop

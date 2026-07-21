@@ -17,7 +17,7 @@ physical availability and size. Full payload fixity modes are a later roadmap ca
 
 ## Can it reopen a previous workspace?
 
-Yes, through **Open existing workspace** in `0.1.0-alpha.3`.
+Yes, through **Open existing workspace** in `0.1.0-alpha.4`.
 
 ## Can I run it while MailVault is syncing?
 
@@ -47,4 +47,4 @@ are unsigned in the current alpha.
 
 ## Can I reopen a workspace after restarting the application?
 
-Yes, in `0.1.0-alpha.3`. Use **Open existing workspace**. The application inspects compatibility and lock state before loading the run catalog. Older alpha.2 workspaces require an explicit backed-up migration.
+Yes, in `0.1.0-alpha.4`. Use **Open existing workspace**. The application inspects compatibility and lock state before loading the run catalog. Older alpha.2 workspaces require an explicit backed-up migration.

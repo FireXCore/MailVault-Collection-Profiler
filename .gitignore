@@ -46,3 +46,8 @@ desktop.ini
 *.partial
 *.bak
 *.log
+
+# Generated pinned format-identification sidecar resources
+tools/siegfried/windows-x86_64/sf.exe
+tools/siegfried/windows-x86_64/default.sig
+tools/siegfried/windows-x86_64/tool-manifest.json

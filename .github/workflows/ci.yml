@@ -96,6 +96,13 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Install and verify pinned Siegfried sidecar
+        shell: pwsh
+        run: ./scripts/install-siegfried.ps1
+
+      - name: Run Windows Siegfried command-contract regressions
+        run: cargo test -p profiler-format-siegfried --locked -- --nocapture
+
       - name: Run Windows snapshot pipeline regression
         run: cargo test -p profiler-engine --test profile_pipeline --locked -- --nocapture
 

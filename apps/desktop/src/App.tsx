@@ -10,16 +10,21 @@ import {
   getCurrentWorkspace,
   getFindingDetail,
   getFindingsPage,
+  getFormatPage,
+  getFormatSummary,
   getInventoryPage,
   getWorkspaceRuns,
+  identifyFormats,
   inspectWorkspace,
   normalizeError,
   openExistingRun,
   openWorkspace,
   preflightArchive,
+  probeFormatTool,
   profileCollection,
   setFindingReviewStatus,
 } from './api';
+import FormatsView from './FormatsView';
 import type {
   ActiveRunContext,
   AvailabilityState,
@@ -29,6 +34,10 @@ import type {
   FindingDetail,
   FindingView,
   FindingsPage,
+  FormatPage,
+  FormatState,
+  FormatSummary,
+  FormatToolIdentity,
   InventoryFilters,
   InventoryObjectRow,
   InventoryPage,
@@ -53,7 +62,7 @@ const dateTime = new Intl.DateTimeFormat('en-US', {
 });
 const PAGE_SIZE = 100;
 
-type View = 'setup' | 'runs' | 'inventory' | 'findings';
+type View = 'setup' | 'runs' | 'inventory' | 'formats' | 'findings';
 type BusyState =
   | 'preflight'
   | 'profile'
@@ -61,6 +70,9 @@ type BusyState =
   | 'runs'
   | 'inventory'
   | 'findings'
+  | 'formats'
+  | 'format_tool'
+  | 'format_run'
   | 'detail'
   | 'review'
   | 'export'
@@ -534,6 +546,17 @@ function App() {
   const [findingsVersion, setFindingsVersion] = useState(0);
   const [findingDetail, setFindingDetail] = useState<FindingDetail | null>(null);
 
+  const [formatSummary, setFormatSummary] = useState<FormatSummary | null>(null);
+  const [formatPage, setFormatPage] = useState<FormatPage | null>(null);
+  const [formatTool, setFormatTool] = useState<FormatToolIdentity | null>(null);
+  const [formatSearch, setFormatSearch] = useState('');
+  const [formatState, setFormatState] = useState<FormatState | ''>('');
+  const [formatPuid, setFormatPuid] = useState('');
+  const [formatMismatchOnly, setFormatMismatchOnly] = useState(false);
+  const [appliedFormatFilters, setAppliedFormatFilters] = useState({ search: '', state: '' as FormatState | '', puid: '', mismatchOnly: false });
+  const [formatAfter, setFormatAfter] = useState<string | undefined>();
+  const [formatVersion, setFormatVersion] = useState(0);
+
   const canReview = workspace?.descriptor.accessMode === 'read_write' && workspace.descriptor.reviewIntegrityValid;
 
   async function runPreflight() {
@@ -590,7 +613,7 @@ function App() {
   }
 
   function resetRunViews() {
-    setInventoryPage(null); setInventoryFilters({}); setAppliedInventoryFilters({}); setInventoryAfter(undefined); setInventoryHistory([]); setInventoryVersion((value) => value + 1); setFindingsPage(null); setFindingAfter(undefined); setFindingDetail(null); setObjectDetail(null); setFindingsVersion((value) => value + 1);
+    setInventoryPage(null); setInventoryFilters({}); setAppliedInventoryFilters({}); setInventoryAfter(undefined); setInventoryHistory([]); setInventoryVersion((value) => value + 1); setFindingsPage(null); setFindingAfter(undefined); setFindingDetail(null); setObjectDetail(null); setFindingsVersion((value) => value + 1); setFormatSummary(null); setFormatPage(null); setFormatTool(null); setFormatAfter(undefined); setFormatVersion((value) => value + 1);
   }
 
   const loadInventory = useCallback(async () => {
@@ -605,8 +628,46 @@ function App() {
     try { setFindingsPage(await getFindingsPage(appliedFindingFilters.code || null, appliedFindingFilters.severity || null, appliedFindingFilters.reviewStatus || null, appliedFindingFilters.category, appliedFindingFilters.search || null, findingAfter ?? null, PAGE_SIZE)); } catch (caught) { setError(normalizeError(caught)); } finally { setBusy(null); }
   }, [activeRun, appliedFindingFilters, findingAfter]);
 
+  const loadFormats = useCallback(async () => {
+    if (!activeRun) return;
+    setBusy('formats'); setError(null);
+    try {
+      const [summary, page] = await Promise.all([
+        getFormatSummary(),
+        getFormatPage(
+          appliedFormatFilters.search || null,
+          appliedFormatFilters.state || null,
+          appliedFormatFilters.puid || null,
+          appliedFormatFilters.mismatchOnly,
+          formatAfter ?? null,
+          PAGE_SIZE,
+        ),
+      ]);
+      setFormatSummary(summary);
+      setFormatPage(page);
+      if (summary.tool) setFormatTool(summary.tool);
+    } catch (caught) { setError(normalizeError(caught)); } finally { setBusy(null); }
+  }, [activeRun, appliedFormatFilters, formatAfter]);
+
+  async function probeFormats() {
+    setBusy('format_tool'); setError(null);
+    try { setFormatTool(await probeFormatTool()); } catch (caught) { setError(normalizeError(caught)); } finally { setBusy(null); }
+  }
+
+  async function runFormats() {
+    if (!activeRun || !canReview) return;
+    setBusy('format_run'); setError(null); setProgress(null);
+    try {
+      await identifyFormats({ batchSize: 2048, workers: 0, timeoutSeconds: 900, resume: true }, setProgress);
+      setFormatVersion((value) => value + 1);
+      setFormatAfter(undefined);
+      await loadFormats();
+    } catch (caught) { setError(normalizeError(caught)); } finally { setBusy(null); }
+  }
+
   useEffect(() => { if (view === 'inventory' && activeRun) void loadInventory(); }, [view, activeRun, inventoryVersion, loadInventory]);
   useEffect(() => { if (view === 'findings' && activeRun) void loadFindings(); }, [view, activeRun, findingsVersion, loadFindings]);
+  useEffect(() => { if (view === 'formats' && activeRun) void loadFormats(); }, [view, activeRun, formatVersion, loadFormats]);
 
   async function openObject(row: InventoryObjectRow) {
     setBusy('detail'); setError(null);
@@ -641,7 +702,8 @@ function App() {
     { id: 'setup' as const, index: '01', label: 'Start', enabled: true },
     { id: 'runs' as const, index: '02', label: 'Workspace runs', enabled: workspace !== null },
     { id: 'inventory' as const, index: '03', label: 'Physical inventory', enabled: activeRun !== null },
-    { id: 'findings' as const, index: '04', label: 'Findings review', enabled: activeRun !== null },
+    { id: 'formats' as const, index: '04', label: 'Exact formats', enabled: activeRun !== null },
+    { id: 'findings' as const, index: '05', label: 'Findings review', enabled: activeRun !== null },
   ], [workspace, activeRun]);
 
   return (
@@ -659,6 +721,7 @@ function App() {
         {view === 'setup' ? <SetupView archiveRoot={archiveRoot} workspaceRoot={workspaceRoot} workspaceToOpen={workspaceToOpen} preflight={preflight} workspaceInspection={workspaceInspection} progress={progress} busy={busy} onArchiveRoot={setArchiveRoot} onWorkspaceRoot={setWorkspaceRoot} onWorkspaceToOpen={setWorkspaceToOpen} onPreflight={() => void runPreflight()} onProfile={() => void createProfile()} onInspectWorkspace={() => void inspectExistingWorkspace()} onOpenWorkspace={(readOnly, allowMigration) => void openExistingWorkspace(readOnly, allowMigration)} /> : null}
         {view === 'runs' && workspace ? <RunsView descriptor={workspace.descriptor} runs={runs} loading={busy === 'runs'} onOpen={(runId) => void activateRun(runId)} /> : null}
         {view === 'inventory' && activeRun ? <InventoryView activeRun={activeRun} page={inventoryPage} filters={inventoryFilters} loading={busy === 'inventory'} canGoBack={inventoryHistory.length > 0} onFilters={setInventoryFilters} onSearch={() => { setAppliedInventoryFilters({ ...inventoryFilters }); setInventoryAfter(undefined); setInventoryHistory([]); setInventoryVersion((value) => value + 1); }} onNext={() => { if (!inventoryPage?.nextAfterSha256) return; setInventoryHistory((history) => [...history, inventoryAfter]); setInventoryAfter(inventoryPage.nextAfterSha256 ?? undefined); }} onPrevious={() => { setInventoryHistory((history) => { const previous = history.at(-1); setInventoryAfter(previous); return history.slice(0, -1); }); }} onSelect={(row) => void openObject(row)} /> : null}
+        {view === 'formats' && activeRun ? <FormatsView summary={formatSummary} page={formatPage} tool={formatTool} progress={progress?.stage === 'format_identification' ? progress : null} loading={busy === 'formats' || busy === 'format_tool'} running={busy === 'format_run'} writable={canReview} search={formatSearch} state={formatState} puid={formatPuid} mismatchOnly={formatMismatchOnly} onSearch={setFormatSearch} onState={setFormatState} onPuid={setFormatPuid} onMismatchOnly={setFormatMismatchOnly} onReload={() => { setAppliedFormatFilters({ search: formatSearch, state: formatState, puid: formatPuid, mismatchOnly: formatMismatchOnly }); setFormatAfter(undefined); setFormatVersion((value) => value + 1); }} onProbe={() => void probeFormats()} onRun={() => void runFormats()} onNext={() => { if (formatPage?.nextAfterSha256) setFormatAfter(formatPage.nextAfterSha256); }} /> : null}
         {view === 'findings' && activeRun ? <FindingsView activeRun={activeRun} page={findingsPage} loading={busy === 'findings'} category={findingCategory} severity={findingSeverity} code={findingCode} reviewStatus={findingReviewStatus} search={findingSearch} onCategory={(category) => { setFindingCategory(category); setAppliedFindingFilters((filters) => ({ ...filters, category })); setFindingAfter(undefined); setFindingsVersion((value) => value + 1); }} onSeverity={setFindingSeverity} onCode={setFindingCode} onReviewStatus={setFindingReviewStatusFilter} onSearch={setFindingSearch} onReload={() => { setAppliedFindingFilters({ category: findingCategory, severity: findingSeverity, code: findingCode, reviewStatus: findingReviewStatus, search: findingSearch }); setFindingAfter(undefined); setFindingsVersion((value) => value + 1); }} onNext={() => { if (findingsPage?.nextAfterId) setFindingAfter(findingsPage.nextAfterId); }} onSelect={(finding) => void openFinding(finding)} onExport={(extension) => void exportRun(extension)} /> : null}
       </main>
       {objectDetail ? <ObjectDrawer detail={objectDetail} onClose={() => setObjectDetail(null)} /> : null}

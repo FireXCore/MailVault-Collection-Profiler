@@ -1,6 +1,6 @@
 # Findings review
 
-Version `0.1.0-alpha.3` converts findings from a read-only list into a durable local review workflow while preserving MailVault and original run evidence.
+Version `0.1.0-alpha.4` converts findings from a read-only list into a durable local review workflow while preserving MailVault and original run evidence.
 
 ## Categories
 

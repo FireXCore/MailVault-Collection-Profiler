@@ -1,153 +1,50 @@
 # Getting started
 
-This guide performs one controlled profile of a MailVault archive on Windows without modifying the
-canonical source.
+## 1. Install
 
-## 1. Understand the three directories
+Download a Windows release, verify `SHA256SUMS.txt` and install the unsigned alpha package. Keep the
+archive and workspace separate.
 
-Use separate roots:
+## 2. Create the physical baseline
 
-```text
-D:\MailVault-Demo                 canonical source archive
-D:\MailVault-Profiler-Workspace   disposable derived profiler data
-D:\MailVault-Profiler-Evidence    run manifests and exported logs
-```
+Run read-only preflight, create the source snapshot and complete the physical inventory. Reopen the
+workspace and confirm the expected baseline counts.
 
-The workspace and evidence roots must not be equal to, inside, or parents of the archive root.
+## 3. Install or verify exact-format resources
 
-## 2. Prepare the source archive
-
-Before preflight:
-
-- stop MailVault synchronization, import, verification and maintenance tasks;
-- confirm the archive drive is stable and has no pending disconnect;
-- do not delete a lock file manually;
-- do not move database or object-store files;
-- ensure the profiler process can read the archive and write to the workspace.
-
-Expected MailVault layout:
-
-```text
-<archive>\database\mailvault.sqlite3
-<archive>\objects\raw\sha256\...
-<archive>\objects\blobs\sha256\...
-<archive>\state\...
-```
-
-## 3. Run read-only preflight
-
-Desktop:
-
-1. Open **Collection setup**.
-2. Select the archive root.
-3. Choose **Run read-only preflight**.
-
-CLI:
+Source builds:
 
 ```powershell
-.\target\release\mailvault-profiler.exe preflight `
-  --archive "D:\MailVault-Demo"
+.\scripts\install-siegfried.ps1
+.\scripts\verify-siegfried.ps1
 ```
 
-Proceed only when:
+Installed desktop builds resolve the bundled Tauri resources automatically.
 
-- `compatible` is true;
-- schema version is `3`;
-- writer lock is absent;
-- required path, schema and integrity checks pass.
+## 4. Migrate with a backup
 
-Warnings require review. Failed required checks block profiling.
+Back up an Alpha 3 workspace before enabling migration. Migration 6 adds exact-format tables and
+indexes without changing MailVault.
 
-## 4. Select the profiler workspace
+## 5. Run exact identification
 
-Choose an empty or dedicated directory outside the source archive:
+Use the **Exact formats** view or follow the
+[exact format runbook](FORMAT_IDENTIFICATION_RUNBOOK.md).
 
-```text
-D:\MailVault-Profiler-Workspace
-```
+## 6. Review output
 
-The workspace stores:
+Start with:
 
-- the consistent source database snapshot;
-- profiler SQLite database and migrations;
-- run checkpoints;
-- derived inventory and findings.
+1. tool errors;
+2. ambiguous results;
+3. unknown results;
+4. extension mismatches;
+5. generic formats such as OLE and octet-stream.
 
-It does not need to be preserved as canonical evidence. It can contain sensitive derived metadata.
+Do not treat an extension match as content validation and do not infer procurement meaning from a
+PUID.
 
-## 5. Create the physical inventory
+## 7. Keep evidence private
 
-Desktop:
-
-1. Select the workspace.
-2. Choose **Create physical inventory**.
-3. Leave the first-run defaults unchanged.
-4. Keep the application and archive drive available until the run reaches its terminal state.
-
-CLI defaults:
-
-```text
-inventory batch size: 1000
-file-stat workers: 0 (conservative automatic policy)
-file-stat batch size: 512
-```
-
-Do not increase worker count before measuring the actual storage device. More concurrent file opens
-can reduce performance on HDDs, external drives and antivirus-scanned volumes.
-
-## 6. Review the result
-
-### Physical inventory
-
-Search by:
-
-- filename or filename variant;
-- full or partial SHA-256;
-- source-detected MIME type;
-- message subject;
-- sender domain.
-
-Filter by availability, size state or finding code. Pagination uses a stable SHA-256 cursor.
-
-### Findings
-
-Review errors first:
-
-- `MISSING_BLOB`;
-- `INVALID_BLOB_LOCATOR`;
-- unreadable or non-regular objects.
-
-Then review warnings:
-
-- `BLOB_SIZE_MISMATCH`;
-- `SAME_HASH_DIFFERENT_NAMES`;
-- `SAME_NAME_DIFFERENT_HASHES`;
-- zero-byte content evidence.
-
-Opening a finding with a content-object identity displays filename history, message occurrences and
-object-level technical evidence.
-
-## 7. Capture runtime evidence
-
-For benchmark or release evidence, use the wrapper:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass `
-  -File .\scripts\run-real-archive-profile.ps1 `
-  -ArchiveRoot "D:\MailVault-Demo" `
-  -WorkspaceRoot "D:\MailVault-Profiler-Workspace" `
-  -EvidenceRoot "D:\MailVault-Profiler-Evidence"
-```
-
-Read [Evidence outputs](EVIDENCE_OUTPUTS.md) before sharing any generated file.
-
-## 8. Finish safely
-
-- Record run state, elapsed time, warnings and errors.
-- Preserve evidence files only where access is controlled.
-- Do not publish filenames, domains, message subjects or local paths without sanitization.
-- Keep the canonical archive unchanged.
-
-## Reopen a completed workspace
-
-After restart, choose **Open existing workspace**, select the same workspace directory, inspect compatibility, approve migration only after reviewing the retained-backup notice, select a run, and open it. Profiling does not rerun. Review writes are disabled automatically if another process owns the workspace lock or if history integrity validation fails.
+Profiler databases and raw logs contain sensitive metadata. Publish only sanitized aggregate
+exports and release screenshots built from synthetic data.

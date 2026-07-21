@@ -1,47 +1,22 @@
-# Privacy and data handling
+# Privacy
 
-MailVault Collection Profiler is designed for local processing.
+Processing is local. The application does not require cloud upload or telemetry.
 
-## Network behavior
+Sensitive derived data can include:
 
-The profiling engine and desktop runtime do not require a cloud API, account or telemetry service.
-Network access may still occur during installation or development when downloading npm crates,
-Rust crates, Tauri tooling, WebView2, WiX or release artifacts.
-
-## Data that remains local
-
-- canonical MailVault archive;
-- consistent source database snapshot;
-- profiler database and checkpoints;
+- archive and workspace paths;
 - filenames and filename variants;
-- message subject and sender-domain metadata;
-- SHA-256 identities;
-- technical findings;
-- progress and runtime evidence.
+- sender domains and message subjects;
+- SHA-256 content identities;
+- PUID/format assertions tied to private objects;
+- tool errors and review notes.
 
-## Derived data is still sensitive
+Exact-format identification invokes a local bundled sidecar only. The sidecar receives local file
+paths and writes machine-readable output to the profiler process. No attachment bytes are sent to
+GitHub, PRONOM or another service during runtime identification.
 
-A profiler database contains no need for attachment payload execution, but it can disclose business
-relationships and collection structure. Protect it with the same access discipline used for the
-source archive.
+The build-time sidecar installation script accesses upstream release services to obtain the pinned
+tool/signature resources. This happens during development/CI, not while profiling an archive.
 
-## Public issue policy
-
-Do not attach:
-
-- archive databases;
-- profiler databases;
-- EML files;
-- attachments;
-- private paths;
-- message subjects;
-- sender or recipient addresses;
-- credentials;
-- unredacted logs.
-
-Use synthetic fixtures and aggregate counts. Documentation screenshots in this repository use demo
-paths and synthetic metadata.
-
-## Review data and sanitized exports
-
-Finding decisions and notes are local profiler metadata. They are not uploaded and are not stored in MailVault. Sanitized export omits absolute paths, filenames, addresses, subjects, full locators and raw notes; short SHA-256-derived tokens provide correlation without exposing source identifiers.
+Publish only sanitized aggregate exports. Do not publish profiler databases, source snapshots, raw
+progress logs or content-level format lists from a private collection.

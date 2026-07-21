@@ -69,13 +69,13 @@ Use the corrected desktop bridge without `#[derive(Debug)]` on `ChannelProgressS
 Tauri app SemVer can remain:
 
 ```text
-0.1.0-alpha.3
+0.1.0-alpha.4
 ```
 
 WiX/MSI version must remain numeric:
 
 ```text
-0.1.0.3
+0.1.0.4
 ```
 
 Run:

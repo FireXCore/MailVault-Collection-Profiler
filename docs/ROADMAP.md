@@ -1,59 +1,33 @@
 # Roadmap
 
-The roadmap is capability-gated. A listed future capability is not implemented merely because its
-domain enum or schema placeholder exists.
+## Completed baseline
 
-## Current: `0.1-C` physical inventory and explorer
+### Alpha 3
 
-Delivered:
+- physical inventory and explorer;
+- findings review and workspace reopen;
+- real 17,296-message runtime evidence.
 
-- read-only source contract and preflight;
-- consistent SQLite snapshot;
-- metadata inventory and attachment reconciliation;
-- bounded file-stat inspection;
-- durable findings and checkpoints;
-- inventory, findings and content-object desktop exploration;
-- CLI and runtime evidence wrapper.
+### Alpha 4 implementation candidate
 
-## Required closure before the next public capability
+- exact format identification with pinned Siegfried/PRONOM;
+- PUID and all-match evidence;
+- bounded/resumable batch execution;
+- exact-format UI and CLI;
+- schema 6 and complete documentation.
 
-- complete the canonical private 20–30 GB benchmark;
-- record elapsed time, throughput, warning and error counts;
-- reconcile observed counts against the documented baseline;
-- tune worker and batch defaults from measured storage behavior;
-- publish only sanitized aggregate evidence.
+Alpha 4 becomes runtime green only after Windows CI and the private real-archive format run pass.
 
-## Planned next slice: exact format identification
+## Next profiler slices
 
-Candidate scope:
+- benchmark-informed format worker/batch defaults;
+- richer technical characterization derived from exact formats;
+- optional JHOVE structural validation for supported formats;
+- privacy-safe aggregate format exports;
+- improved run control and interruption testing.
 
-- frozen Siegfried binary provenance;
-- frozen PRONOM signature provenance;
-- resumable format-identification batches;
-- no duplicate payload rereads where identity permits reuse;
-- structured assertions and format findings.
+## Separate future layer
 
-## Deferred
-
-- reopening existing workspaces;
-- interactive pause/resume/cancel;
-- full fixity modes;
-- container expansion;
-- JHOVE validation;
-- OCR;
-- semantic extraction and classification;
-- graph analysis;
-- procurement-specific classification;
-- automatic updates;
-- multi-platform signed distribution.
-## 0.1.0-alpha.3 — completed source scope
-
-- Workspace reopen and compatibility inspection.
-- Backed-up schema migration.
-- Run catalog after restart.
-- Append-only finding review and history integrity.
-- Sanitized review exports.
-
-## Next candidate
-
-`0.1.0-alpha.4` should focus on resumable execution controls and durable run recovery, without expanding into archive repair or semantic processing.
+Safe text extraction, selective OCR and procurement classification should consume profiler
+manifests as a separate document-corpus/intelligence boundary. They should not mutate MailVault or
+weaken the profiler's technical evidence contract.

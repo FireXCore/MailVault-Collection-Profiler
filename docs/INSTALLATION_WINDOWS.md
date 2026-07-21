@@ -2,7 +2,7 @@
 
 ## Supported target
 
-`0.1.0-alpha.3` is validated for Windows x64 using the MSVC Rust target. The project may compile on
+`0.1.0-alpha.4` is validated for Windows x64 using the MSVC Rust target. The project may compile on
 other desktop platforms after installing normal Tauri system libraries, but the canonical native
 release gate is Windows.
 
@@ -108,7 +108,7 @@ target\release\bundle\nsis
 target\release\bundle\msi
 ```
 
-The public SemVer remains `0.1.0-alpha.3`. WiX/MSI uses the numeric package version `0.1.0.3`
+The public SemVer remains `0.1.0-alpha.4`. WiX/MSI uses the numeric package version `0.1.0.4`
 because Windows Installer does not accept an arbitrary prerelease label in ProductVersion.
 
 ## Run in development
@@ -126,3 +126,16 @@ npm run tauri -- dev
 - MSI prerelease version error: run `npm run check:release-config` and keep the numeric WiX mapping.
 
 See [Troubleshooting](TROUBLESHOOTING.md).
+
+
+## Exact-format sidecar for source builds
+
+Before compiling a release bundle, run:
+
+```powershell
+.\scripts\install-siegfried.ps1
+.\scripts\verify-siegfried.ps1
+```
+
+The installer build embeds the verified `sf.exe`, `default.sig` and `tool-manifest.json` as Tauri
+resources. Do not commit generated sidecar binaries.

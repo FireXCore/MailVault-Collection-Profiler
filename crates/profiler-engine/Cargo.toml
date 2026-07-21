@@ -13,6 +13,7 @@ time.workspace = true
 hex.workspace = true
 profiler-adapter-mailvault = { path = "../profiler-adapter-mailvault" }
 profiler-core = { path = "../profiler-core" }
+profiler-format-siegfried = { path = "../profiler-format-siegfried" }
 profiler-storage-sqlite = { path = "../profiler-storage-sqlite" }
 rayon.workspace = true
 serde.workspace = true

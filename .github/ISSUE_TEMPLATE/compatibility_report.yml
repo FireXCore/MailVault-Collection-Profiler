@@ -12,7 +12,7 @@ body:
     id: profiler-version
     attributes:
       label: Profiler version
-      placeholder: 0.1.0-alpha.3
+      placeholder: 0.1.0-alpha.4
     validations:
       required: true
 

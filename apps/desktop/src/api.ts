@@ -8,6 +8,11 @@ import type {
   FindingDetail,
   FindingReviewHistory,
   FindingsPage,
+  FormatIdentifyRequest,
+  FormatPage,
+  FormatState,
+  FormatSummary,
+  FormatToolIdentity,
   InventoryFilters,
   InventoryPage,
   OpenWorkspaceResult,
@@ -87,6 +92,38 @@ export async function createSourceSnapshot(
   const onEvent = new Channel<ProgressEvent>();
   onEvent.onmessage = onProgress;
   return invoke('create_source_snapshot', { root, workspace, onEvent });
+}
+
+export async function probeFormatTool(
+  siegfriedPath: string | null = null,
+): Promise<FormatToolIdentity> {
+  return invoke<FormatToolIdentity>('probe_format_tool', { siegfriedPath });
+}
+
+export async function identifyFormats(
+  request: FormatIdentifyRequest,
+  onProgress: (event: ProgressEvent) => void,
+): Promise<unknown> {
+  const onEvent = new Channel<ProgressEvent>();
+  onEvent.onmessage = onProgress;
+  return invoke('identify_formats', { request, onEvent });
+}
+
+export async function getFormatSummary(): Promise<FormatSummary> {
+  return invoke<FormatSummary>('format_summary');
+}
+
+export async function getFormatPage(
+  search: string | null,
+  state: FormatState | null,
+  puid: string | null,
+  mismatchOnly: boolean,
+  afterSha256: string | null,
+  limit: number,
+): Promise<FormatPage> {
+  return invoke<FormatPage>('format_page', {
+    request: { search, state, puid, mismatchOnly, afterSha256, limit },
+  });
 }
 
 export function normalizeError(error: unknown): ErrorReport {

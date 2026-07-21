@@ -37,6 +37,12 @@ pub enum ErrorCode {
     ReviewHistoryIntegrityFailure,
     ReviewWriteNotAllowed,
     SanitizedExportFailed,
+    FormatToolNotFound,
+    FormatToolIncompatible,
+    FormatRunNotFound,
+    FormatRunFailed,
+    FormatRunAlreadyActive,
+    FormatOutputInvalid,
     Internal,
 }
 
