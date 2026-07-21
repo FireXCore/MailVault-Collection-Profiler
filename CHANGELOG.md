@@ -51,9 +51,9 @@ may change local profiler schemas and command contracts through explicit migrati
 
 ### Validation
 
-- Passed the complete Windows quality gate, including Clippy with warnings denied, 28 Rust tests, TypeScript, Vite and native desktop compilation.
-- Completed a controlled real-archive profile with 17,296 messages, 54,450 MIME parts, 13,684 content objects and 1,484 findings.
-- Verified workspace reopen, review persistence, Windows read-only lock fallback, sanitized exports and zero source mutation.
+- Passed the complete Windows quality gate, including strict Clippy, 36 Rust tests, TypeScript, Vite, native desktop compilation and npm audit with 0 vulnerabilities.
+- Completed the full private exact-format run with 13,684/13,684 objects, 13,636 identified, 46 unknown, 0 ambiguous, 0 tool errors, 51 extension mismatches and 64 distinct PUIDs.
+- Verified schema 5-to-6 workspace migration, complete byte coverage and unchanged canonical MailVault SHA-256.
 
 ### Security and privacy
 

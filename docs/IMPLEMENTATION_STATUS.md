@@ -12,28 +12,29 @@
 
 ## Validated
 
-- frontend type/build;
-- Rust syntax parse;
-- real Alpha 3 profiler DB migration and count preservation;
-- SQLite integrity after migration;
-- synthetic format projection;
+- complete Windows release configuration and documentation/privacy gate;
+- Rust formatting and strict workspace Clippy with warnings denied;
+- complete Rust test suite: 36 passed, 0 failed;
+- frontend TypeScript check and Vite production build;
+- native Tauri desktop compilation;
+- npm audit: 0 vulnerabilities;
 - Windows PowerShell 5.1 sidecar installation and independent verification;
 - pinned Siegfried `1.11.6` and PRONOM `v124` runtime identity;
 - Windows-safe home-relative signature argument contract;
-- five `profiler-format-siegfried` unit tests;
-- workspace Rust formatting check.
+- real Alpha 3 workspace migration from schema 5 to 6;
+- full private 13,684-object exact-format run;
+- 13,684/13,684 object coverage and 6,466,878,455/6,466,878,455 byte coverage;
+- 13,636 identified, 46 unknown, 0 ambiguous and 0 tool errors;
+- 51 extension mismatches and 64 distinct PUIDs recorded for review;
+- canonical MailVault SHA-256 unchanged before and after identification;
+- sanitized aggregate acceptance evidence and evidence checksum manifest.
 
-## Required before runtime-green release
+## Runtime status
 
-- rerun strict workspace Clippy after the structural refactor;
-- run the complete Rust workspace test suite on CI;
-- Windows Tauri build and installers;
-- verified sidecar install in CI;
-- private real-archive exact-format run;
-- benchmark, resume-interruption and source-nonmutation evidence;
-- sanitized aggregate format report.
+`0.1.0-alpha.4` is runtime green for the supplied private MailVault collection. Public Windows
+installers remain unsigned and the release is intended for controlled technical evaluation.
 
 ## Deferred
 
 Physical-profile pause/resume, full fixity, container expansion, JHOVE, extraction, OCR, semantic
-search, procurement classification and RMS integration.
+search, procurement classification, RMS integration and automatic application updates.

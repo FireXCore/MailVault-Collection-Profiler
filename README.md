@@ -56,8 +56,9 @@ sample-only data:
 | Physical inventory warnings / errors | 2 / 0 |
 
 Alpha 3 validated the physical inventory on Windows. Alpha 4 preserves that baseline, adds schema
-migration `0006` and the exact-format execution contract. A private real-archive format run is still
-required before publishing format-distribution performance claims.
+migration `0006`, and completed a private full-scale exact-format run: 13,684/13,684 objects,
+13,636 identified, 46 unknown, 0 ambiguous and 0 tool errors. The canonical MailVault database
+SHA-256 remained unchanged.
 
 ## Implemented capabilities
 
