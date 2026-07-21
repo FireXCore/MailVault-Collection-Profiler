@@ -1926,7 +1926,7 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "mailvault-profiler-cli"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "clap",
  "profiler-adapter-mailvault",
@@ -1941,7 +1941,7 @@ dependencies = [
 
 [[package]]
 name = "mailvault-profiler-desktop"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "profiler-adapter-mailvault",
  "profiler-core",
@@ -2573,7 +2573,7 @@ dependencies = [
 
 [[package]]
 name = "profiler-adapter-mailvault"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "fs2",
  "hex",
@@ -2589,7 +2589,7 @@ dependencies = [
 
 [[package]]
 name = "profiler-core"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "hex",
  "serde",
@@ -2602,12 +2602,13 @@ dependencies = [
 
 [[package]]
 name = "profiler-engine"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "fs2",
  "hex",
  "profiler-adapter-mailvault",
  "profiler-core",
+ "profiler-format-siegfried",
  "profiler-storage-sqlite",
  "rayon",
  "rusqlite",
@@ -2620,8 +2621,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "profiler-format-siegfried"
+version = "0.1.0-alpha.4"
+dependencies = [
+ "hex",
+ "profiler-core",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "time",
+ "tracing",
+]
+
+[[package]]
 name = "profiler-storage-sqlite"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "profiler-core",
  "rusqlite",

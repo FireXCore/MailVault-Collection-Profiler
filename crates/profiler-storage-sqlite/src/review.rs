@@ -3,8 +3,8 @@ use std::{collections::BTreeMap, str::FromStr};
 use profiler_core::{
     ErrorCode, FindingDetail, FindingReviewEvent, FindingReviewHistory, ProfilerError,
     ProfilerResult, ReviewAction, ReviewActorKind, ReviewStatus, ReviewSummary,
-    SanitizedFindingRow, SanitizedRunSummary, normalize_review_note, redaction_token,
-    validate_status_note,
+    SanitizedFindingRow, SanitizedFormatSummary, SanitizedRunSummary, normalize_review_note,
+    redaction_token, validate_status_note,
 };
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use uuid::Uuid;
@@ -343,6 +343,46 @@ impl ProfilerStore {
         let inventory = self.run_inventory_summary(collection_id, snapshot_id)?;
         let findings = self.findings_summary(run_id)?;
         let review = self.review_summary(run_id)?;
+        let format_summary = self.format_summary(run_id)?;
+        let exact_formats = SanitizedFormatSummary {
+            latest_format_run_id: format_summary.latest_format_run_id,
+            latest_run_state: format_summary.latest_run_state,
+            total_objects: format_summary.total_objects,
+            eligible_objects: format_summary.eligible_objects,
+            completed_objects: format_summary.completed_objects,
+            total_bytes: format_summary.total_bytes,
+            completed_bytes: format_summary.completed_bytes,
+            identified: format_summary.identified,
+            unknown: format_summary.unknown,
+            ambiguous: format_summary.ambiguous,
+            empty: format_summary.empty,
+            skipped_unavailable: format_summary.skipped_unavailable,
+            tool_errors: format_summary.tool_errors,
+            extension_mismatches: format_summary.extension_mismatches,
+            distinct_puids: format_summary.distinct_puids,
+            tool_name: format_summary
+                .tool
+                .as_ref()
+                .map(|tool| tool.tool_name.clone()),
+            tool_version: format_summary
+                .tool
+                .as_ref()
+                .map(|tool| tool.tool_version.clone()),
+            executable_sha256: format_summary
+                .tool
+                .as_ref()
+                .map(|tool| tool.executable_sha256.clone()),
+            signature_version: format_summary
+                .tool
+                .as_ref()
+                .map(|tool| tool.signature_version.clone()),
+            signature_sha256: format_summary
+                .tool
+                .as_ref()
+                .and_then(|tool| tool.signature_sha256.clone()),
+            started_at: format_summary.started_at,
+            finished_at: format_summary.finished_at,
+        };
         let findings_by_code = map_counts(
             &self.connection,
             "SELECT code, COUNT(*) FROM findings
@@ -361,7 +401,7 @@ impl ProfilerStore {
             run_id,
         )?;
         Ok(SanitizedRunSummary {
-            format_version: 1,
+            format_version: 2,
             generated_at: now_text(),
             run_id: run_id.to_owned(),
             application_version: env!("CARGO_PKG_VERSION").into(),
@@ -371,6 +411,7 @@ impl ProfilerStore {
             inventory,
             findings,
             review,
+            exact_formats,
             findings_by_code,
             review_by_status,
         })

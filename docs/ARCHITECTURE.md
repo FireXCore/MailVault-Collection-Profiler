@@ -1,87 +1,67 @@
 # Architecture
 
+## Product boundary
+
 ```text
-MailVault archive (read-only)
-        â”‚
-        â–¼
-Capability preflight
-        â”‚
-        â–¼
-SQLite Online Backup snapshot
-        â”‚
-        â–¼
-Streaming metadata inventory
-        â”‚
-        â–¼
-SHA-256 content reconciliation
-        â”‚
-        â–¼
-Bounded physical file-stat workers
-        â”‚
-        â–¼
-Single-writer profiler SQLite
-        â”‚
-        â”œâ”€â”€ read-only CLI/report queries
-        â””â”€â”€ state-bound Tauri desktop explorer
+MailVault canonical archive
+  ↓ read-only adapter and consistent snapshot
+Physical inventory
+  ↓ unique SHA-256 content objects and occurrences
+Exact format identification
+  ↓ versioned PUID/format assertions
+Future document corpus
+  ↓ safe extraction and selective OCR
+RMS intelligence
 ```
 
-## Crates
+MailVault remains the source of truth. The profiler database is derived and rebuildable, except for
+human review events that should be backed up.
 
-- `profiler-core`: domain contracts, errors, run state, explorer types and progress events;
-- `profiler-storage-sqlite`: disposable profiler database, migrations, checkpoints and explorer queries;
-- `profiler-adapter-mailvault`: MailVault v2.0.6 schema/layout adapter and physical object resolver;
-- `profiler-engine`: ordered snapshot, inventory, reconciliation and file-stat pipeline;
-- `mailvault-profiler-cli`: headless preflight, snapshot and profile commands;
-- `mailvault-profiler-desktop`: Tauri command boundary and React application.
+## Workspace crates
 
-## Source snapshot
+- `profiler-core`: contracts, progress, errors, run and exact-format types;
+- `profiler-storage-sqlite`: migrations, inventory/review/format persistence and queries;
+- `profiler-adapter-mailvault`: schema-v3 read-only adapter and snapshot;
+- `profiler-engine`: physical-profile, workspace and exact-format orchestration;
+- `profiler-format-siegfried`: pinned sidecar probe, staging, bounded execution and JSON parsing;
+- `mailvault-profiler-cli`: headless operations and evidence streams;
+- `mailvault-profiler-desktop`: Tauri command boundary and React UI.
 
-The source database is never copied with a raw filesystem copy. The adapter opens SQLite using
-read-only flags and uses the SQLite Online Backup API to create a consistent destination database.
-The destination is written only in the profiler workspace. Source metrics are compared before and
-after backup; a changing source invalidates the unpublished snapshot.
+## Exact format stage
 
-## Physical inventory
+The engine processes content objects in stable SHA-256 order. It skips unavailable and zero-byte
+objects, resolves each canonical locator beneath the archive root, invokes Siegfried in bounded
+batches and commits observations, all matches and a checkpoint in one transaction.
 
-Messages, MIME parts, blob rows and relationships are streamed in stable source order. Attachment
-occurrences remain separate from SHA-256 content objects, so one binary may retain many filenames,
-messages and thread contexts without duplicate payload processing.
+The runner is deliberately outside `profiler-engine` so a future identifier can implement the same
+core contract without changing physical inventory or UI persistence.
 
-The file-stat stage works on unique content objects only. It uses bounded batches and a dedicated
-Rayon pool, validates the exact MailVault fan-out locator, rejects paths outside the archive root,
-and persists each result with the matching durable checkpoint transaction.
+## Concurrency
 
-## Storage and explorer boundary
+- one exact-format writer per workspace, enforced by an OS file lock;
+- one sidecar process per batch;
+- Siegfried worker count is configured explicitly;
+- stdout/stderr readers are bounded and joined;
+- failed batches are split recursively to isolate per-object failures;
+- SQLite commits remain batch-scoped.
 
-The profiler database is disposable and rebuildable. One controlled writer is used during a run.
-The desktop explorer opens a separate SQLite connection in read-only/query-only mode and verifies
-the profiler application ID and exact schema version before executing queries.
+## Evidence identity
 
-Desktop explorer commands do not accept an arbitrary database path from the webview. A completed
-profile activates a server-side session containing the profiler database, collection and run IDs.
+A completed format run stores:
 
-## Compatibility
+- physical baseline run ID;
+- application contract version;
+- executable and signature hashes;
+- observed tool and signature versions;
+- configuration fingerprint;
+- counts and byte totals;
+- durable checkpoint;
+- object observations and all matches.
 
-Compatibility is capability-based. The adapter checks required tables and columns, then records
-recommended-index warnings separately. A cosmetic package version string is not used as an archive
-contract.
+A run cannot be marked complete unless committed object count equals the expected total.
 
-The current adapter accepts MailVault schema version 3 only. A newer source schema fails closed
-until the adapter is reviewed.
+## Security
 
-## Progress
-
-Progress events contain exact stage units:
-
-- snapshot: SQLite pages;
-- metadata inventory: source rows;
-- reconciliation and file stat: unique objects;
-- physical verification: expected bytes.
-
-The UI uses byte totals where available, does not fabricate an overall pipeline percentage and
-leaves ETA unavailable until the backend has enough measurable work. Warning, error, worker,
-queue and checkpoint counters come directly from the current stage event.
-
-## Workspace reopen and review boundary
-
-`profiler-engine::workspace` owns canonical path validation, operating-system locking, open modes and atomic export publication. `profiler-storage-sqlite` owns schema migration, backup, run catalog, review events/projection and integrity verification. Tauri and CLI call typed engine operations and do not execute SQL. Review state is derived metadata and never enters MailVault or original evidence files.
+Source paths are untrusted. Every file is canonicalized and required to remain beneath the MailVault
+root. No command shell is used. The sidecar receives argument arrays and a generated list file.
+Container expansion is disabled. See [Security model](SECURITY_MODEL.md).

@@ -5,12 +5,13 @@ members = [
   "crates/profiler-adapter-mailvault",
   "crates/profiler-core",
   "crates/profiler-engine",
+  "crates/profiler-format-siegfried",
   "crates/profiler-storage-sqlite",
 ]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 edition = "2024"
 rust-version = "1.97.1"
 authors = ["FireXCore"]

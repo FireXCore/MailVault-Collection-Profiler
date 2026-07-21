@@ -2,6 +2,7 @@ mod adapter;
 mod error;
 mod explorer;
 mod file_stat;
+mod format;
 mod inventory;
 mod progress;
 mod run;
@@ -16,6 +17,7 @@ pub use file_stat::{
     FileStatResult, FileStatRunner, FileStatStore, FileStatSummary, FileStatWorkItem,
     PhysicalObjectResolver, SizeState,
 };
+pub use format::*;
 pub use inventory::{
     InventoryBatch, InventoryCheckpoint, InventoryOptions, InventoryRequest, InventoryResult,
     InventorySink, InventorySource, InventorySummary, InventoryTable, SourceBlobRecord,

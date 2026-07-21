@@ -1,67 +1,151 @@
-# تحویل نهایی آماده‌سازی مخزن GitHub
+# تحویل انتشار GitHub — `0.1.0-alpha.4`
 
-این سند مشخص می‌کند چه چیزی داخل بسته آماده شده و ترتیب اجرای مالک مخزن چیست.
+این سند ترتیب امن انتقال Candidate آلفا ۴ به مخزن عمومی را مشخص می‌کند. آلفا ۴ قابلیت
+**Exact Format Identification** را به Profiler اضافه می‌کند، اما تا قبل از سبز شدن Windows CI و
+اجرای خصوصی روی آرشیو واقعی، `runtime green` محسوب نمی‌شود.
 
 ## خروجی آماده‌شده
 
-مخزن اکنون شامل این لایه‌ها است:
+مخزن اکنون شامل این موارد است:
 
-1. README عمومی با معرفی، Safety Contract، نصب، GUI، CLI، محدودیت‌ها و تصاویر Sanitized؛
-2. مستند نصب Windows و Build از Source؛
-3. راهنمای کامل GUI و CLI؛
-4. معماری، Security Model، Privacy و Evidence Outputs؛
-5. Troubleshooting و FAQ؛
-6. راهنمای توسعه و Release Process؛
-7. راهنمای فارسی تنظیم GitHub، Ruleset، Actions، Security و انتشار؛
-8. Issue Formهای Bug، Feature و Compatibility؛
-9. Pull Request Template حرفه‌ای؛
-10. CI چهارمرحله‌ای برای Rust، Frontend، Windows Desktop و Privacy Scrub؛
-11. CodeQL، Dependency Review و Dependabot؛
-12. Release Workflow برای Build خودکار MSI/NSIS، Draft Release، SHA-256 و Attestation؛
-13. Social Preview و شش تصویر عمومی بدون مسیر یا اطلاعات خصوصی؛
-14. Gate خودکار برای Broken Link، فایل‌های ضروری، Registry خصوصی و اطلاعات حساس؛
-15. Release Notes نسخه `0.1.0-alpha.3`.
+1. موتور Read-only فهرست‌برداری فیزیکی Alpha 3؛
+2. ماژول مستقل `profiler-format-siegfried`؛
+3. قرارداد Pin شده Siegfried `1.11.6` و PRONOM `v124`؛
+4. ثبت PUID، نام و نسخه فرمت، MIME، Basis، Warning و همه Matchها؛
+5. انتخاب Primary Assertion به‌صورت Deterministic بدون حذف Ambiguity؛
+6. Batch محدود، Timeout، سقف خروجی، Adaptive Failure Isolation و Resume؛
+7. Workspace Lock مستقل برای جلوگیری از اجرای هم‌زمان Format Stage؛
+8. Migration شماره `0006` و Queryهای Baseline-scoped؛
+9. CLIهای `formats probe/identify/summary/list`؛
+10. صفحه **Exact formats** در Desktop UI؛
+11. Sanitized Export Schema 2؛
+12. مستندات انگلیسی و فارسی، Runbook، Security، Privacy و Release Notes؛
+13. نه تصویر Sanitized با وضوح بالا و Social Preview؛
+14. CI برای Rust، Frontend، Windows Desktop و Documentation/Privacy؛
+15. Release Workflow برای MSI/NSIS، SHA-256 و Attestation.
 
-## مرحله ۱: جایگزینی مخزن محلی
+## وضعیت Validation همین بسته
 
-پوشه نهایی را در مسیر عمومی و بدون نام خصوصی استخراج کن:
+در محیط آماده‌سازی فعلی این Gateها اجرا و سبز شده‌اند:
 
 ```text
-D:\mailvault-collection-profiler
+Release configuration check
+Documentation / privacy / local-link check
+Rust Tree-sitter syntax parse: 34 files
+TypeScript strict type-check
+Vite production build
+npm production audit: 0 vulnerabilities
+npm complete audit: 0 vulnerabilities
+Real Alpha 3 database migration: schema 5 → 6
+SQLite quick_check / foreign_key_check
+Baseline-scoped format projection isolation
 ```
 
-پوشه قبلی را مبنا قرار نده. فایل‌های `target`، `node_modules` و `dist` داخل بسته Release Repository
-نیستند و باید محلی ساخته شوند.
+در این محیط Rust toolchain موجود نبود. بنابراین موارد زیر هنوز ادعا نمی‌شوند:
 
-## مرحله ۲: Gate نهایی Windows
+```text
+cargo check
+rustfmt semantic gate
+Clippy
+Rust unit/integration tests
+Native Tauri compile
+MSI/NSIS build
+Live Siegfried installation/probe
+Real 13,684-object format run
+```
 
-داخل **x64 Native Tools Command Prompt for Visual Studio**:
+مدرک کامل: `docs/VALIDATION_0.1.0-alpha.4.md`.
 
-```cmd
-call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=amd64 -host_arch=amd64
-cd /d D:\mailvault-collection-profiler
+## مرحله ۱: ساخت Branch
+
+بسته Source را در یک مسیر عمومی و بدون اطلاعات خصوصی استخراج کن و داخل Repository فعلی Branch
+جدید بساز:
+
+```powershell
+git checkout main
+git pull --ff-only
+git checkout -b feat/alpha4-exact-format-identification
+```
+
+فایل‌های بسته را روی Repository جایگزین کن. پوشه‌های `node_modules`، `target`، `dist`، دیتابیس‌های
+Profiler و Runtime Evidence نباید Commit شوند.
+
+## مرحله ۲: Gate کامل Windows
+
+داخل **x64 Native Tools Command Prompt for Visual Studio** یا PowerShellی که Toolchainهای لازم را
+می‌بیند:
+
+```powershell
+cd E:\github\mailvault-collection-profiler
 npm ci
-npm run check:docs
-npm run check:release-config
-node scripts\check-tag-version.cjs v0.1.0-alpha.3
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-siegfried.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\quality.ps1
 npm run tauri:desktop:bundle
 ```
 
-هیچ Tag یا Release تا قبل از سبز شدن کامل این Gate ساخته نشود.
+همچنین Tag Mapping را قبل از Release کنترل کن:
 
-## مرحله ۳: ساخت مخزن
-
-Repository:
-
-```text
-FireXCore/mailvault-collection-profiler
+```powershell
+npm run check:release-config
+node .\scripts\check-tag-version.cjs v0.1.0-alpha.4
 ```
 
-Description:
+هیچ Tag یا Release تا قبل از سبز شدن این Gate ساخته نشود.
+
+## مرحله ۳: Commit و Pull Request
+
+```powershell
+git add .
+git status --short
+git commit -m "feat: add exact PRONOM format identification"
+git push -u origin feat/alpha4-exact-format-identification
+```
+
+Pull Request باید تمام Required Checkهای Branch Protection را پاس کند. Diff اصلی شامل ۱۸ فایل
+جدید و ۵۱ فایل اصلاح‌شده است.
+
+## مرحله ۴: Smoke Test خصوصی
+
+پس از ساخت Release CLI، Runbook زیر را روی یک Copy/Backup از Workspace آلفا ۳ اجرا کن:
 
 ```text
-Local-first, read-only physical inventory and technical evidence explorer for MailVault archives.
+docs/FORMAT_IDENTIFICATION_RUNBOOK.md
+```
+
+حداقل شواهد لازم:
+
+- Probe دقیق Siegfried `1.11.6` و PRONOM `v124`؛
+- Hash ابزار و Signature؛
+- Migration موفق Workspace؛
+- اجرای کامل یا Resume موفق Format Stage؛
+- تعداد Identified، Unknown، Ambiguous، Mismatch و Tool Error؛
+- `quick_check` و `foreign_key_check`؛
+- Source non-mutation evidence؛
+- Sanitized aggregate export.
+
+Raw Profiler DB، Snapshot، Path، Filename، Subject، Domain و Progress JSONL عمومی نشوند.
+
+## مرحله ۵: Merge و Tag
+
+فقط پس از سبز شدن CI و Smoke Test:
+
+```powershell
+git checkout main
+git pull --ff-only
+git tag -a v0.1.0-alpha.4 -m "MailVault Collection Profiler 0.1.0-alpha.4"
+git push origin v0.1.0-alpha.4
+```
+
+Workflow `release.yml` یک Draft Release می‌سازد. Draft باید شامل NSIS، MSI و
+`SHA256SUMS.txt` باشد. قبل از Publish، Installerها را روی Windows تمیز نصب و باز کن و Bundled
+Siegfried Resources را Probe کن.
+
+## فایل‌های GitHub
+
+Repository Description:
+
+```text
+Local-first, read-only physical inventory and exact file-format evidence for MailVault archives.
 ```
 
 Social Preview:
@@ -70,78 +154,14 @@ Social Preview:
 docs/assets/social-preview.png
 ```
 
-## مرحله ۴: Push اولیه
-
-```cmd
-git init
-git branch -M main
-git add .
-git status --short
-git commit -m "Release MailVault Collection Profiler 0.1.0-alpha.3"
-git remote add origin https://github.com/FireXCore/mailvault-collection-profiler.git
-git push -u origin main
-```
-
-## مرحله ۵: ساخت Labelها
-
-بعد از `gh auth login`:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass `
-  -File .\scripts\configure-github-labels.ps1 `
-  -Repository "FireXCore/mailvault-collection-profiler"
-```
-
-## مرحله ۶: تنظیمات GitHub
-
-راهنمای خط‌به‌خط:
+Release Notes:
 
 ```text
-docs/GITHUB_PUBLISHING_GUIDE_FA.md
+docs/releases/v0.1.0-alpha.4.md
 ```
-
-این بخش‌ها باید تنظیم شوند:
-
-- About، Topics و Social Preview؛
-- Ruleset شاخه `main`؛
-- Required Status Checks؛
-- Workflow Permission حداقلی؛
-- Dependabot، Secret Scanning و Push Protection؛
-- Private Vulnerability Reporting؛
-- Community Standards.
-
-## مرحله ۷: Release
-
-```cmd
-git tag -a v0.1.0-alpha.3 -m "MailVault Collection Profiler 0.1.0-alpha.3"
-git push origin v0.1.0-alpha.3
-```
-
-Workflow فایل زیر Draft Release می‌سازد:
-
-```text
-.github/workflows/release.yml
-```
-
-Draft باید شامل NSIS، MSI و `SHA256SUMS.txt` باشد. تا قبل از Smoke Test روی یک Windows تمیز Publish
-نشود.
 
 ## مرز ادعا
 
-موارد تأییدشده:
-
-- Quality Gate و تست‌های Rust سبز؛
-- Windows Snapshot Regression سبز؛
-- Tauri Desktop Compile سبز؛
-- MSI و NSIS ساخته شده‌اند؛
-- برنامه نصب و اجرا شده است؛
-- Preflight آرشیو واقعی Schema v3 سازگار است؛
-- اجرای واقعی وارد Metadata Inventory شده است.
-
-موردی که هنوز نباید در README یا Release به‌عنوان قطعی ادعا شود:
-
-```text
-Full 20–30 GB benchmark completed
-```
-
-این ادعا فقط پس از پایان Run و ثبت Evidence Manifest، زمان، حافظه، شمارنده‌ها و Hash قبل/بعد مجاز است.
+بعد از CI می‌توان ادعا کرد که Source و Installer Build Gate سبز است. فقط بعد از اجرای واقعی
+می‌توان آمار Format Distribution، Throughput، ETA، Peak Memory و Runtime Green بودن آلفا ۴ را
+منتشر کرد.

@@ -348,6 +348,33 @@ pub struct SanitizedFindingRow {
     pub reviewed_at: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SanitizedFormatSummary {
+    pub latest_format_run_id: Option<String>,
+    pub latest_run_state: Option<String>,
+    pub total_objects: u64,
+    pub eligible_objects: u64,
+    pub completed_objects: u64,
+    pub total_bytes: u64,
+    pub completed_bytes: u64,
+    pub identified: u64,
+    pub unknown: u64,
+    pub ambiguous: u64,
+    pub empty: u64,
+    pub skipped_unavailable: u64,
+    pub tool_errors: u64,
+    pub extension_mismatches: u64,
+    pub distinct_puids: u64,
+    pub tool_name: Option<String>,
+    pub tool_version: Option<String>,
+    pub executable_sha256: Option<String>,
+    pub signature_version: Option<String>,
+    pub signature_sha256: Option<String>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SanitizedRunSummary {
@@ -361,6 +388,7 @@ pub struct SanitizedRunSummary {
     pub inventory: InventorySummary,
     pub findings: FindingsSummary,
     pub review: ReviewSummary,
+    pub exact_formats: SanitizedFormatSummary,
     pub findings_by_code: BTreeMap<String, u64>,
     pub review_by_status: BTreeMap<String, u64>,
 }

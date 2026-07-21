@@ -90,7 +90,7 @@ git init
 git branch -M main
 git add .
 git status --short
-git commit -m "Release MailVault Collection Profiler 0.1.0-alpha.3"
+git commit -m "Release MailVault Collection Profiler 0.1.0-alpha.4"
 git remote add origin https://github.com/FireXCore/mailvault-collection-profiler.git
 git push -u origin main
 ```
@@ -262,7 +262,7 @@ Release فقط با Tag نسخه اجرا می‌شود.
 
 اگر CI قرمز است، Tag و Release نساز. انتهای Build موفق Frontend به‌تنهایی به معنی Gate سبز نیست.
 
-## ۱۰. آماده‌سازی Release `0.1.0-alpha.3`
+## ۱۰. آماده‌سازی Release `0.1.0-alpha.4`
 
 نسخه باید در این فایل‌ها هماهنگ باشد:
 
@@ -278,13 +278,13 @@ apps/desktop/src-tauri/tauri.conf.json
 
 ```cmd
 npm run check:release-config
-node scripts\check-tag-version.cjs v0.1.0-alpha.3
+node scripts\check-tag-version.cjs v0.1.0-alpha.4
 ```
 
 Release Notes عمومی در این فایل آماده است:
 
 ```text
-docs/releases/v0.1.0-alpha.3.md
+docs/releases/v0.1.0-alpha.4.md
 ```
 
 ## ۱۱. ساخت Tag و اجرای Release Workflow
@@ -293,8 +293,8 @@ docs/releases/v0.1.0-alpha.3.md
 git checkout main
 git pull --ff-only
 git status --short
-git tag -a v0.1.0-alpha.3 -m "MailVault Collection Profiler 0.1.0-alpha.3"
-git push origin v0.1.0-alpha.3
+git tag -a v0.1.0-alpha.4 -m "MailVault Collection Profiler 0.1.0-alpha.4"
+git push origin v0.1.0-alpha.4
 ```
 
 Workflow زیر اجرا می‌شود:
@@ -325,7 +325,7 @@ Releases → Draft release
 
 قبل از Publish کنترل کن:
 
-- Tag دقیقاً `v0.1.0-alpha.3` باشد
+- Tag دقیقاً `v0.1.0-alpha.4` باشد
 - گزینه `This is a pre-release` روشن باشد
 - Release Notes کامل باشد
 - NSIS `-setup.exe` وجود داشته باشد
@@ -392,14 +392,14 @@ Publish release
 اگر قبل از Publish مشکل وجود دارد، Draft را حذف کن، Tag را فقط در صورت منتشرنشدن حذف و اصلاح کن:
 
 ```cmd
-git push --delete origin v0.1.0-alpha.3
-git tag -d v0.1.0-alpha.3
+git push --delete origin v0.1.0-alpha.4
+git tag -d v0.1.0-alpha.4
 ```
 
 اگر Release منتشر شده است، Tag را بازنویسی نکن. یک نسخه جدید مانند زیر بساز:
 
 ```text
-0.1.0-alpha.3
+0.1.0-alpha.4
 ```
 
 Release منتشرشده باید Immutable تلقی شود.

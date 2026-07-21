@@ -5,7 +5,17 @@ All notable changes to MailVault Collection Profiler are documented here.
 The project follows Semantic Versioning once the public API reaches a stable release. Alpha builds
 may change local profiler schemas and command contracts through explicit migrations.
 
-## 0.1.0-alpha.3 — 2026-07-20
+## 0.1.0-alpha.4 — 2026-07-21
+
+- Added exact format identification with pinned Siegfried `1.11.6` and PRONOM `v124`.
+- Added versioned PUID assertions, all-match retention, bounded batches, resume checkpoints and format UI/CLI.
+- Added verified sidecar acquisition, Tauri resource bundling and third-party notices.
+- Added migration `0006_exact_format_identification.sql`.
+- Updated English/Persian documentation and sanitized release screenshots.
+- Fixed Windows JSON probing and real-batch execution by resolving the verified signature through
+  `-home` and passing only `default.sig`, avoiding Siegfried 1.11.6's unescaped header path.
+- Added Windows regression coverage for the sidecar command contract.
+
 
 ### Added
 
@@ -24,7 +34,7 @@ may change local profiler schemas and command contracts through explicit migrati
 
 ### Changed
 
-- Public application version advanced to `0.1.0-alpha.3`; WiX/MSI version maps to `0.1.0.3`.
+- Public application version advanced to `0.1.0-alpha.4`; WiX/MSI version maps to `0.1.0.4`.
 - Informational filename/content relationships are separated from warnings requiring attention.
 - Quality, CI and release commands use locked Cargo resolution and validate alpha.3 release notes.
 

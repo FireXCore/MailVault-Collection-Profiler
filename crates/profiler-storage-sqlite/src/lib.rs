@@ -1,4 +1,5 @@
 mod explorer;
+mod format;
 mod review;
 mod workspace;
 
@@ -32,7 +33,7 @@ use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
 const APPLICATION_ID: i64 = 0x4D56_5046; // MVPF
-pub const CURRENT_USER_VERSION: i64 = 5;
+pub const CURRENT_USER_VERSION: i64 = 6;
 
 #[derive(Debug, Clone, Copy)]
 struct Migration {
@@ -66,6 +67,11 @@ const MIGRATIONS: &[Migration] = &[
         id: "0005_workspace_reopen_reviews",
         user_version: 5,
         sql: include_str!("../migrations/0005_workspace_reopen_reviews.sql"),
+    },
+    Migration {
+        id: "0006_exact_format_identification",
+        user_version: 6,
+        sql: include_str!("../migrations/0006_exact_format_identification.sql"),
     },
 ];
 
@@ -1687,18 +1693,19 @@ fn verify_required_workspace_tables(connection: &Connection) -> ProfilerResult<(
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master
              WHERE type='table' AND name IN (
-                'workspace_meta', 'finding_review_events', 'finding_review_state'
+                'workspace_meta', 'finding_review_events', 'finding_review_state',
+                'format_tools', 'format_identification_runs', 'format_observations', 'format_matches'
              )",
             [],
             |row| row.get(0),
         )
         .map_err(|source| sqlite_error("checking workspace review tables", source))?;
-    if count == 3 {
+    if count == 7 {
         Ok(())
     } else {
         Err(ProfilerError::contract(
             profiler_core::ErrorCode::WorkspaceInvalidLayout,
-            "workspace review schema is incomplete",
+            "workspace review or format-identification schema is incomplete",
             false,
         ))
     }
@@ -2043,7 +2050,7 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(count, 5);
+        assert_eq!(count, 6);
         let user_version: i64 = second
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get(0))

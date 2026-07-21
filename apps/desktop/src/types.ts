@@ -421,3 +421,83 @@ export interface FindingDetail {
   object: ContentObjectDetail | null;
   review: FindingReviewHistory;
 }
+
+export type FormatState =
+  | 'uninspected'
+  | 'identified'
+  | 'unknown'
+  | 'ambiguous'
+  | 'empty'
+  | 'skipped_unavailable'
+  | 'tool_error';
+
+export interface FormatIdentifierIdentity {
+  name: string;
+  details: string;
+}
+
+export interface FormatToolIdentity {
+  toolName: string;
+  toolVersion: string;
+  executablePath: string;
+  executableSha256: string;
+  signaturePath: string;
+  signatureSha256: string | null;
+  signatureVersion: string;
+  signatureCreated: string | null;
+  identifiers: FormatIdentifierIdentity[];
+  probedAt: string;
+}
+
+export interface FormatSummary {
+  baselineRunId: string;
+  latestFormatRunId: string | null;
+  latestRunState: string | null;
+  totalObjects: number;
+  eligibleObjects: number;
+  completedObjects: number;
+  totalBytes: number;
+  completedBytes: number;
+  identified: number;
+  unknown: number;
+  ambiguous: number;
+  empty: number;
+  skippedUnavailable: number;
+  toolErrors: number;
+  extensionMismatches: number;
+  distinctPuids: number;
+  tool: FormatToolIdentity | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface FormatObjectRow {
+  contentObjectId: string;
+  sha256: string;
+  primaryFilename: string;
+  expectedSizeBytes: number;
+  sourceMimeType: string;
+  state: FormatState;
+  primaryIdentifier: string | null;
+  primaryFormatName: string | null;
+  primaryFormatVersion: string | null;
+  primaryMimeType: string | null;
+  matchCount: number;
+  extensionChecked: boolean;
+  extensionMismatch: boolean;
+}
+
+export interface FormatPage {
+  items: FormatObjectRow[];
+  totalFiltered: number;
+  nextAfterSha256: string | null;
+  hasMore: boolean;
+}
+
+export interface FormatIdentifyRequest {
+  siegfriedPath?: string | null;
+  batchSize: number;
+  workers: number;
+  timeoutSeconds: number;
+  resume: boolean;
+}

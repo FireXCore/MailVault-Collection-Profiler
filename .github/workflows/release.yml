@@ -56,6 +56,10 @@ jobs:
           node scripts/check-tag-version.cjs "${{ github.ref_name }}"
           npm run check:docs
 
+      - name: Install and verify pinned Siegfried sidecar
+        shell: pwsh
+        run: ./scripts/install-siegfried.ps1
+
       - name: Run complete Windows quality gate
         shell: pwsh
         run: ./scripts/quality.ps1
@@ -149,9 +153,11 @@ jobs:
       - name: Generate SHA-256 manifest
         shell: pwsh
         run: |
-          $artifacts = Get-ChildItem "target/release/bundle" -Recurse -File |
-            Where-Object { $_.Extension -in @(".exe", ".msi") } |
-            Sort-Object Name
+          $artifacts = @(
+            Get-ChildItem "target/release/bundle" -Recurse -File |
+              Where-Object { $_.Extension -in @(".exe", ".msi") }
+            Get-Item "tools/siegfried/windows-x86_64/tool-manifest.json"
+          ) | Sort-Object Name
 
           if (-not $artifacts) {
             throw "No NSIS or MSI artifacts were produced."

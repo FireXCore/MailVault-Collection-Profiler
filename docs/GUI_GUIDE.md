@@ -1,101 +1,46 @@
-# Desktop GUI guide
+# GUI guide
 
-The desktop application has three primary views. Inventory and findings are enabled after a
-successful profile completes in the current application session.
+## Start and collection setup
 
-## 1. Collection setup
+Select the canonical MailVault root, run preflight and create or open a profiler workspace. The
+source is always read-only.
 
-![Collection setup](assets/screenshots/01-collection-setup-preflight.png)
+## Runs
 
-### Archive root
+Choose a completed physical-profile run. Alpha 4 attaches exact format assertions to this baseline;
+it does not create a new archive.
 
-Select the MailVault archive root, not the database file itself. The application derives the
-canonical database, raw object store, blob object store and state directory from this root.
+## Physical inventory
 
-### Read-only preflight
+Search content objects and inspect filename/message occurrence history. SHA-256 is identity;
+filename is evidence.
 
-Preflight validates:
+## Findings
 
-- required paths and file types;
-- supported schema version;
-- required tables, columns and indexes;
-- source writer lock;
-- SQLite integrity and source metrics.
+Review physical findings using append-only statuses. Review state never modifies MailVault.
 
-The source contract panel lists every check and its required or advisory level.
+## Exact formats
 
-### Workspace
+The **Exact formats** view:
 
-The profiler workspace must be separate from the source archive. The action remains disabled until
-preflight is compatible and a workspace is selected.
+1. resolves the bundled or configured Siegfried sidecar;
+2. displays observed tool/signature identity;
+3. shows eligible object and byte totals;
+4. starts or resumes the versioned format run;
+5. streams exact object progress;
+6. exposes state, PUID, search and mismatch filters.
 
-## 2. Live profile progress
+Extension status meanings:
 
-![Live profile](assets/screenshots/02-profile-running.png)
+- **Mismatch** — a safe extension alias was checked and the tool reported mismatch evidence;
+- **No mismatch** — an alias was checked and no mismatch warning was reported;
+- **Not checked** — no reliable extension alias was evaluated.
 
-Progress events expose:
+Unknown and ambiguous are evidence queues, not application failures. Tool errors require technical
+review.
 
-- current stage and stage state;
-- completed and total items;
-- completed and total bytes when available;
-- instantaneous and smoothed throughput;
-- elapsed time and ETA;
-- active workers and queue depth;
-- warnings, errors and checkpoint sequence;
-- current object display when appropriate.
+## Screenshots
 
-Progress is monotonic within a stage. A later event with lower item, byte or checkpoint counters is
-rejected by the core contract.
+![Exact format dashboard](assets/screenshots/07-exact-format-identification-ready.png)
 
-## 3. Physical inventory
-
-![Inventory explorer](assets/screenshots/03-inventory-explorer.png)
-
-The inventory represents exact binary content identities, not only attachment rows.
-
-### Search
-
-The search field matches:
-
-- primary and historical filenames;
-- SHA-256;
-- source-detected MIME type;
-- message subject;
-- sender domain.
-
-### Filters
-
-- Availability: available, missing, unreadable, invalid locator, non-regular.
-- Size state: match, mismatch, unavailable.
-- Finding code: zero byte, multiple filenames, missing blob, size mismatch.
-
-### Pagination
-
-The explorer uses stable SHA-256 keyset pagination. It does not use unstable offset pagination for
-large inventory browsing.
-
-## 4. Findings
-
-![Findings explorer](assets/screenshots/04-findings-explorer.png)
-
-Findings can be filtered by severity and structured code. An object-level finding opens its content
-object. Collection-level findings remain reviewable without an object identity.
-
-## 5. Content-object detail
-
-![Content-object detail](assets/screenshots/06-content-object-detail.png)
-
-The detail drawer includes:
-
-- complete SHA-256 identity;
-- availability and size state;
-- expected size, occurrence count, message count and thread count;
-- technical findings;
-- filename variant history;
-- message occurrence history with source part path.
-
-The drawer intentionally shows metadata only. It does not render or execute attachment payloads.
-
-## Existing workspace and review journey
-
-The start page provides **Profile new archive** and **Open existing workspace**. Inspection shows schema, compatibility, lock mode and run count. Older compatible workspaces require explicit migration confirmation. The run catalog opens previous inventory and findings. The finding drawer exposes status, required-note validation and append-only history. Informational filename/content relationships are separated from attention-required findings.
+![Format assertion detail](assets/screenshots/08-format-assertion-detail.png)

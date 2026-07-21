@@ -420,7 +420,7 @@ finally {
 
         $manifest = [ordered]@{
             schemaVersion       = 1
-            profilerVersion     = "0.1.0-alpha.3"
+            profilerVersion     = "0.1.0-alpha.4"
             startedAt           = $startedAt.ToString("o")
             finishedAt          = $finishedAt.ToString("o")
             elapsedMilliseconds = [long] $elapsedMilliseconds
