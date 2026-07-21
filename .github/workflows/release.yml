@@ -137,7 +137,7 @@ jobs:
       # Preserve successfully built installers even if a later release/API step fails.
       - name: Preserve Windows installers as workflow artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MailVault-Collection-Profiler_${{ github.ref_name }}_windows-x64
           path: |
