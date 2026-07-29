@@ -49,7 +49,8 @@ if missing and sys.argv[2]!='1': raise SystemExit('active unavailable objects re
 '@
 $Audit=Join-Path $env:TEMP 'mailvault-alpha6-real.py'
 Set-Content -LiteralPath $Audit -Value $Python -Encoding UTF8
-python $Audit $ProfilerDb ([int]$AllowKnownMissing)
+$AllowKnownMissingFlag = if ($AllowKnownMissing.IsPresent) { '1' } else { '0' }
+python $Audit $ProfilerDb $AllowKnownMissingFlag
 if($LASTEXITCODE -ne 0){throw 'Initial/no-change database assertions failed.'}
 $After=(Get-FileHash -LiteralPath $SourceDb -Algorithm SHA256).Hash
 if($Before -ne $After){throw 'Profiler modified canonical MailVault database.'}

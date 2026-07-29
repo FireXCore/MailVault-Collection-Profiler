@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory=$true)][string]$WorkspaceRoot,
     [string]$Siegfried,
     [string]$Signature,
+    [switch]$AllowKnownMissing,
     [switch]$BuildInstallers
 )
 $ErrorActionPreference='Stop'
@@ -11,7 +12,7 @@ New-Item -ItemType Directory -Force -Path $EvidenceRoot|Out-Null
 & (Join-Path $PSScriptRoot 'quality-alpha6.ps1') -BuildInstallers:$BuildInstallers 2>&1 |
     Tee-Object -FilePath (Join-Path $EvidenceRoot '01-quality.log')
 & (Join-Path $PSScriptRoot 'validate-alpha6-real.ps1') -ArchiveRoot $ArchiveRoot `
-    -WorkspaceRoot $WorkspaceRoot -Siegfried $Siegfried -Signature $Signature -SkipQuality 2>&1 |
+    -WorkspaceRoot $WorkspaceRoot -Siegfried $Siegfried -Signature $Signature -SkipQuality -AllowKnownMissing:$AllowKnownMissing 2>&1 |
     Tee-Object -FilePath (Join-Path $EvidenceRoot '02-initial-no-change.log')
 $Manifest=[ordered]@{
     schema='mailvault.profiler.alpha6.acceptance.v1'
