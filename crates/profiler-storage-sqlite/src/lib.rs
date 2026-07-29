@@ -10,6 +10,7 @@ pub fn migration_failure_marker_path(database_path: &Path) -> PathBuf {
 }
 
 use std::{
+    collections::BTreeSet,
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
@@ -33,7 +34,7 @@ use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
 const APPLICATION_ID: i64 = 0x4D56_5046; // MVPF
-pub const CURRENT_USER_VERSION: i64 = 6;
+pub const CURRENT_USER_VERSION: i64 = 7;
 
 #[derive(Debug, Clone, Copy)]
 struct Migration {
@@ -72,6 +73,11 @@ const MIGRATIONS: &[Migration] = &[
         id: "0006_exact_format_identification",
         user_version: 6,
         sql: include_str!("../migrations/0006_exact_format_identification.sql"),
+    },
+    Migration {
+        id: "0007_continuous_profile",
+        user_version: 7,
+        sql: include_str!("../migrations/0007_continuous_profile.sql"),
     },
 ];
 
@@ -248,6 +254,174 @@ impl ProfilerStore {
                 params![id, adapter_kind, archive_identity, archive_root_display, now],
             )
             .map_err(|source| sqlite_error("registering collection", source))?;
+        Ok(id)
+    }
+
+    pub fn register_continuous_collection(
+        &self,
+        adapter_kind: &str,
+        archive_identity: &str,
+        aliases: &[String],
+        archive_root_display: &str,
+    ) -> ProfilerResult<String> {
+        if let Some((id, payload)) = self.find_exact_collection(adapter_kind, archive_identity)? {
+            let mut merged = parse_identity_aliases(&payload)?;
+            merged.insert(archive_identity.to_owned());
+            merged.extend(aliases.iter().cloned());
+            self.update_continuous_collection(
+                &id,
+                archive_identity,
+                &merged,
+                archive_root_display,
+                false,
+            )?;
+            return Ok(id);
+        }
+
+        let requested = aliases
+            .iter()
+            .cloned()
+            .chain(std::iter::once(archive_identity.to_owned()))
+            .collect::<BTreeSet<_>>();
+        let mut matches = self.find_collection_alias_matches(adapter_kind, &requested)?;
+        if matches.len() > 1 {
+            return Err(ProfilerError::contract(
+                profiler_core::ErrorCode::WorkspaceSourceOverlap,
+                "archive identity aliases match more than one profiler collection",
+                false,
+            ));
+        }
+        if let Some((id, mut merged)) = matches.pop() {
+            merged.extend(requested);
+            self.update_continuous_collection(
+                &id,
+                archive_identity,
+                &merged,
+                archive_root_display,
+                true,
+            )?;
+            return Ok(id);
+        }
+
+        self.insert_continuous_collection(
+            adapter_kind,
+            archive_identity,
+            &requested,
+            archive_root_display,
+        )
+    }
+
+    fn find_exact_collection(
+        &self,
+        adapter_kind: &str,
+        archive_identity: &str,
+    ) -> ProfilerResult<Option<(String, String)>> {
+        self.connection
+            .query_row(
+                "SELECT id, archive_identity_aliases_json FROM collections
+                 WHERE adapter_kind=?1 AND archive_identity=?2",
+                params![adapter_kind, archive_identity],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()
+            .map_err(|source| sqlite_error("finding exact collection identity", source))
+    }
+
+    fn find_collection_alias_matches(
+        &self,
+        adapter_kind: &str,
+        requested: &BTreeSet<String>,
+    ) -> ProfilerResult<Vec<(String, BTreeSet<String>)>> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT id, archive_identity, archive_identity_aliases_json
+                 FROM collections WHERE adapter_kind=?1",
+            )
+            .map_err(|source| sqlite_error("preparing collection alias lookup", source))?;
+        let candidates = statement
+            .query_map([adapter_kind], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(|source| sqlite_error("querying collection aliases", source))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|source| sqlite_error("collecting collection aliases", source))?;
+
+        candidates
+            .into_iter()
+            .filter_map(|(id, identity, payload)| {
+                let mut persisted = match parse_identity_aliases(&payload) {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                };
+                persisted.insert(identity);
+                (!persisted.is_disjoint(requested)).then_some(Ok((id, persisted)))
+            })
+            .collect()
+    }
+
+    fn update_continuous_collection(
+        &self,
+        id: &str,
+        archive_identity: &str,
+        aliases: &BTreeSet<String>,
+        archive_root_display: &str,
+        migrate_identity: bool,
+    ) -> ProfilerResult<()> {
+        let aliases_json = serialize_identity_aliases(aliases)?;
+        if migrate_identity {
+            self.connection
+                .execute(
+                    "UPDATE collections SET archive_identity=?1, archive_identity_aliases_json=?2,
+                     archive_root_display=?3, updated_at=?4 WHERE id=?5",
+                    params![
+                        archive_identity,
+                        aliases_json,
+                        archive_root_display,
+                        now_text(),
+                        id
+                    ],
+                )
+                .map_err(|source| sqlite_error("migrating collection identity", source))?;
+        } else {
+            self.connection
+                .execute(
+                    "UPDATE collections SET archive_identity_aliases_json=?1,
+                     archive_root_display=?2, updated_at=?3 WHERE id=?4",
+                    params![aliases_json, archive_root_display, now_text(), id],
+                )
+                .map_err(|source| sqlite_error("updating continuous collection", source))?;
+        }
+        Ok(())
+    }
+
+    fn insert_continuous_collection(
+        &self,
+        adapter_kind: &str,
+        archive_identity: &str,
+        aliases: &BTreeSet<String>,
+        archive_root_display: &str,
+    ) -> ProfilerResult<String> {
+        let id = Uuid::now_v7().to_string();
+        self.connection
+            .execute(
+                "INSERT INTO collections(id, adapter_kind, archive_identity, archive_root_display,
+                 created_at, updated_at, archive_identity_aliases_json)
+                 VALUES(?1,?2,?3,?4,?5,?5,?6)",
+                params![
+                    id,
+                    adapter_kind,
+                    archive_identity,
+                    archive_root_display,
+                    now_text(),
+                    serialize_identity_aliases(aliases)?
+                ],
+            )
+            .map_err(|source| sqlite_error("registering continuous collection", source))?;
         Ok(id)
     }
 
@@ -472,15 +646,26 @@ impl InventorySink for ProfilerStore {
 
         transaction
             .execute(
-                "UPDATE content_objects AS content \
-                 SET occurrence_count=(\
-                    SELECT COUNT(*) FROM content_occurrences AS occurrence \
-                    WHERE occurrence.content_object_id=content.id\
-                 ), updated_at=?1 \
-                 WHERE collection_id=?2",
-                params![now_text(), request.collection_id],
+                "UPDATE content_objects AS content SET
+                active=CASE WHEN EXISTS(SELECT 1 FROM source_blobs b
+                    WHERE b.snapshot_id=?1 AND b.sha256=content.sha256)
+                    OR EXISTS(SELECT 1 FROM source_parts p
+                    WHERE p.snapshot_id=?1 AND p.sha256=content.sha256) THEN 1 ELSE 0 END,
+                last_seen_snapshot_id=CASE WHEN EXISTS(SELECT 1 FROM source_blobs b
+                    WHERE b.snapshot_id=?1 AND b.sha256=content.sha256)
+                    OR EXISTS(SELECT 1 FROM source_parts p
+                    WHERE p.snapshot_id=?1 AND p.sha256=content.sha256)
+                    THEN ?1 ELSE last_seen_snapshot_id END,
+                occurrence_count=(SELECT COUNT(*) FROM content_occurrences o
+                    WHERE o.content_object_id=content.id AND o.snapshot_id=?1),
+                updated_at=?2 WHERE collection_id=?3",
+                params![
+                    request.source_snapshot_id,
+                    now_text(),
+                    request.collection_id
+                ],
             )
-            .map_err(|source| sqlite_error("updating content occurrence counts", source))?;
+            .map_err(|source| sqlite_error("updating current content projection", source))?;
 
         transaction
             .execute(
@@ -499,10 +684,10 @@ impl InventorySink for ProfilerStore {
                  SELECT content_object_id, filename_normalized, MIN(filename_original), COUNT(*), \
                         MIN(message_date), MAX(message_date) \
                  FROM content_occurrences \
-                 WHERE filename_normalized IS NOT NULL \
-                   AND content_object_id IN (SELECT id FROM content_objects WHERE collection_id=?1) \
+                 WHERE snapshot_id=?1 AND filename_normalized IS NOT NULL \
+                   AND content_object_id IN (SELECT id FROM content_objects WHERE collection_id=?2 AND active=1) \
                  GROUP BY content_object_id, filename_normalized",
-                [request.collection_id.as_str()],
+                params![request.source_snapshot_id, request.collection_id],
             )
             .map_err(|source| sqlite_error("building filename variants", source))?;
 
@@ -537,44 +722,52 @@ impl FileStatStore for ProfilerStore {
             .transpose()
     }
 
-    fn count_file_stat_objects(&self, collection_id: &str) -> ProfilerResult<(u64, u64)> {
-        let (objects, bytes): (i64, i64) = self
-            .connection
-            .query_row(
-                "SELECT COUNT(*), COALESCE(SUM(expected_size_bytes), 0) \
-                 FROM content_objects WHERE collection_id=?1",
-                [collection_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .map_err(|source| sqlite_error("counting file-stat objects", source))?;
+    fn count_file_stat_objects(
+        &self,
+        run_id: &str,
+        collection_id: &str,
+    ) -> ProfilerResult<(u64, u64)> {
+        let (objects, bytes):(i64,i64)=self.connection.query_row(
+            "SELECT COUNT(*), COALESCE(SUM(expected_size_bytes),0) FROM content_objects c
+             WHERE c.collection_id=?1 AND c.active=1 AND (
+                EXISTS(SELECT 1 FROM file_stat_observations o WHERE o.run_id=?2 AND o.content_object_id=c.id)
+                OR c.last_stat_success_fingerprint IS NULL
+                OR c.last_stat_success_fingerprint<>c.stat_input_fingerprint
+                OR c.availability_state<>'available' OR c.size_state<>'match')",
+            params![collection_id,run_id], |row| Ok((row.get(0)?,row.get(1)?)),
+        ).map_err(|source| sqlite_error("counting selective file-stat workload", source))?;
         Ok((
-            u64::try_from(objects).map_err(|_| {
-                ProfilerError::Internal("negative file-stat object count returned".into())
-            })?,
-            u64::try_from(bytes).map_err(|_| {
-                ProfilerError::Internal("negative file-stat byte count returned".into())
-            })?,
+            u64::try_from(objects)
+                .map_err(|_| ProfilerError::Internal("negative file-stat count".into()))?,
+            u64::try_from(bytes)
+                .map_err(|_| ProfilerError::Internal("negative file-stat bytes".into()))?,
         ))
     }
 
     fn load_file_stat_batch(
         &self,
+        run_id: &str,
         collection_id: &str,
         after_sha256: Option<&str>,
         limit: u32,
     ) -> ProfilerResult<Vec<FileStatWorkItem>> {
-        let mut statement = self
-            .connection
-            .prepare_cached(
-                "SELECT id, sha256, expected_size_bytes, canonical_path_display \
-                 FROM content_objects \
-                 WHERE collection_id=?1 AND sha256>?2 \
-                 ORDER BY sha256 LIMIT ?3",
-            )
-            .map_err(|source| sqlite_error("preparing file-stat work batch", source))?;
+        let mut statement=self.connection.prepare_cached(
+            "SELECT c.id,c.sha256,c.expected_size_bytes,c.canonical_path_display
+             FROM content_objects c WHERE c.collection_id=?1 AND c.active=1 AND c.sha256>?3
+               AND NOT EXISTS(SELECT 1 FROM file_stat_observations o WHERE o.run_id=?2 AND o.content_object_id=c.id)
+               AND (c.last_stat_success_fingerprint IS NULL
+                    OR c.last_stat_success_fingerprint<>c.stat_input_fingerprint
+                    OR c.availability_state<>'available' OR c.size_state<>'match')
+             ORDER BY c.sha256 LIMIT ?4"
+        ).map_err(|source| sqlite_error("preparing selective file-stat batch",source))?;
         statement
             .query_map(
-                params![collection_id, after_sha256.unwrap_or(""), i64::from(limit)],
+                params![
+                    collection_id,
+                    run_id,
+                    after_sha256.unwrap_or(""),
+                    i64::from(limit)
+                ],
                 |row| {
                     let size: i64 = row.get(2)?;
                     Ok(FileStatWorkItem {
@@ -586,9 +779,9 @@ impl FileStatStore for ProfilerStore {
                     })
                 },
             )
-            .map_err(|source| sqlite_error("querying file-stat work batch", source))?
+            .map_err(|source| sqlite_error("querying selective file-stat batch", source))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|source| sqlite_error("collecting file-stat work batch", source))
+            .map_err(|source| sqlite_error("collecting selective file-stat batch", source))
     }
 
     fn commit_file_stat_batch(
@@ -611,7 +804,7 @@ impl FileStatStore for ProfilerStore {
     fn finalize_file_stat(&mut self, request: &FileStatRequest) -> ProfilerResult<FileStatSummary> {
         let summary = file_stat_summary(&self.connection, request)?;
         let (expected_objects, expected_bytes) =
-            self.count_file_stat_objects(&request.collection_id)?;
+            self.count_file_stat_objects(&request.run_id, &request.collection_id)?;
         if summary.total_objects != expected_objects || summary.expected_bytes != expected_bytes {
             return Err(ProfilerError::Internal(format!(
                 "file-stat reconciliation failed: observations={}/{}, bytes={}/{}",
@@ -757,15 +950,19 @@ fn ingest_blobs(
             "INSERT INTO content_objects(\
                 id, collection_id, sha256, expected_size_bytes, source_detected_mime_type, \
                 canonical_path_display, availability_state, integrity_state, security_state, \
-                first_seen_at, last_seen_at, occurrence_count, created_at, updated_at\
-             ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, 'uninspected', ?7, 'unknown', ?8, ?8, 0, ?9, ?9) \
+                first_seen_at, last_seen_at, occurrence_count, created_at, updated_at, active,
+                last_seen_snapshot_id, stat_input_fingerprint, format_input_fingerprint\
+             ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, 'uninspected', ?7, 'unknown', ?8, ?8, 0, ?9, ?9, 1, ?10, ?11, ?12) \
              ON CONFLICT(collection_id, sha256) DO UPDATE SET \
                 expected_size_bytes=excluded.expected_size_bytes, \
                 source_detected_mime_type=excluded.source_detected_mime_type, \
                 canonical_path_display=excluded.canonical_path_display, \
-                integrity_state=excluded.integrity_state, \
+                integrity_state=excluded.integrity_state, active=1,
+                last_seen_snapshot_id=excluded.last_seen_snapshot_id,
+                stat_input_fingerprint=excluded.stat_input_fingerprint,
+                format_input_fingerprint=excluded.format_input_fingerprint, \
                 first_seen_at=COALESCE(content_objects.first_seen_at, excluded.first_seen_at), \
-                updated_at=excluded.updated_at",
+                last_seen_at=excluded.last_seen_at, updated_at=excluded.updated_at",
         )
         .map_err(|source| sqlite_error("preparing blob ingestion", source))?;
     for row in rows {
@@ -808,6 +1005,15 @@ fn ingest_blobs(
                 },
                 row.first_seen_at,
                 now,
+                request.source_snapshot_id,
+                format!(
+                    "stat-v1:{}:{}:{}",
+                    row.sha256, row.size_bytes, row.storage_path
+                ),
+                format!(
+                    "format-v2:{}:{}:{}",
+                    row.sha256, row.size_bytes, row.detected_mime_type
+                ),
             ])
             .map_err(|source| sqlite_error("ingesting content object", source))?;
     }
@@ -845,9 +1051,19 @@ fn ingest_parts(
             "INSERT INTO content_objects(\
                 id, collection_id, sha256, expected_size_bytes, source_detected_mime_type, \
                 canonical_path_display, availability_state, integrity_state, security_state, \
-                first_seen_at, last_seen_at, occurrence_count, created_at, updated_at\
-             ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, 'uninspected', 'not_verified', 'unknown', ?7, ?7, 0, ?8, ?8) \
-             ON CONFLICT(collection_id, sha256) DO NOTHING",
+                first_seen_at, last_seen_at, occurrence_count, created_at, updated_at, active,
+                last_seen_snapshot_id, stat_input_fingerprint, format_input_fingerprint\
+             ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, 'uninspected', 'not_verified', 'unknown', ?7, ?7, 0, ?8, ?8, 1, ?9, ?10, ?11) \
+             ON CONFLICT(collection_id, sha256) DO UPDATE SET active=1,
+                last_seen_snapshot_id=excluded.last_seen_snapshot_id,
+                expected_size_bytes=excluded.expected_size_bytes,
+                source_detected_mime_type=excluded.source_detected_mime_type,
+                canonical_path_display=CASE WHEN excluded.canonical_path_display<>''
+                    THEN excluded.canonical_path_display ELSE content_objects.canonical_path_display END,
+                stat_input_fingerprint=CASE WHEN excluded.canonical_path_display<>''
+                    THEN excluded.stat_input_fingerprint ELSE content_objects.stat_input_fingerprint END,
+                format_input_fingerprint=excluded.format_input_fingerprint,
+                updated_at=excluded.updated_at",
         )
         .map_err(|source| sqlite_error("preparing fallback content ingestion", source))?;
     let mut occurrence_statement = transaction
@@ -921,6 +1137,21 @@ fn ingest_parts(
                 row.blob_path.as_deref().unwrap_or(""),
                 row.message_date,
                 now,
+                request.source_snapshot_id,
+                format!(
+                    "stat-v1:{}:{}:{}",
+                    sha256,
+                    row.size_bytes,
+                    row.blob_path.as_deref().unwrap_or("")
+                ),
+                format!(
+                    "format-v2:{}:{}:{}",
+                    sha256,
+                    row.size_bytes,
+                    row.detected_mime_type
+                        .as_deref()
+                        .unwrap_or(&row.declared_mime_type)
+                ),
             ])
             .map_err(|source| sqlite_error("ingesting fallback content object", source))?;
 
@@ -1050,7 +1281,11 @@ fn persist_file_stat_observations(
                     WHEN integrity_state='source_verified' THEN 'source_verified' \
                     ELSE 'size_verified' \
                 END, \
-                modified_unix_ns=?4, last_stat_run_id=?5, last_stat_at=?6, updated_at=?6 \
+                modified_unix_ns=?4, last_stat_run_id=?5, last_stat_at=?6,
+                last_stat_success_fingerprint=CASE WHEN ?2='available' AND ?3='match'
+                    THEN stat_input_fingerprint ELSE last_stat_success_fingerprint END,
+                stat_retry_count=CASE WHEN ?2='available' AND ?3='match' THEN 0 ELSE stat_retry_count+1 END,
+                updated_at=?6 \
              WHERE id=?7 AND collection_id=?8",
         )
         .map_err(|source| sqlite_error("preparing content-object file-stat update", source))?;
@@ -1532,7 +1767,7 @@ fn inventory_summary(
         )?,
         content_objects: count_where(
             connection,
-            "SELECT COUNT(*) FROM content_objects WHERE collection_id=?1",
+            "SELECT COUNT(*) FROM content_objects WHERE collection_id=?1 AND active=1",
             &request.collection_id,
         )?,
         content_occurrences: count_where(
@@ -1547,7 +1782,7 @@ fn inventory_summary(
         )?,
         zero_byte_content_objects: count_where(
             connection,
-            "SELECT COUNT(*) FROM content_objects WHERE collection_id=?1 AND expected_size_bytes=0",
+            "SELECT COUNT(*) FROM content_objects WHERE collection_id=?1 AND active=1 AND expected_size_bytes=0",
             &request.collection_id,
         )?,
         same_hash_different_names: count_where(
@@ -2033,6 +2268,19 @@ fn sqlite_error(operation: &'static str, source: rusqlite::Error) -> ProfilerErr
     }
 }
 
+fn parse_identity_aliases(payload: &str) -> ProfilerResult<BTreeSet<String>> {
+    serde_json::from_str::<Vec<String>>(payload)
+        .map(|values| values.into_iter().collect())
+        .map_err(|error| {
+            ProfilerError::Internal(format!("invalid collection aliases JSON: {error}"))
+        })
+}
+
+fn serialize_identity_aliases(aliases: &BTreeSet<String>) -> ProfilerResult<String> {
+    serde_json::to_string(aliases)
+        .map_err(|error| ProfilerError::Internal(format!("serializing identity aliases: {error}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2050,7 +2298,7 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(count, 6);
+        assert_eq!(count, 7);
         let user_version: i64 = second
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get(0))

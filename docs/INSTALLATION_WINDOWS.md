@@ -2,7 +2,7 @@
 
 ## Supported target
 
-`0.1.0-alpha.4` is validated for Windows x64 using the MSVC Rust target. The project may compile on
+`0.1.0-alpha.6` is validated for Windows x64 using the MSVC Rust target. The project may compile on
 other desktop platforms after installing normal Tauri system libraries, but the canonical native
 release gate is Windows.
 
@@ -108,7 +108,7 @@ target\release\bundle\nsis
 target\release\bundle\msi
 ```
 
-The public SemVer remains `0.1.0-alpha.4`. WiX/MSI uses the numeric package version `0.1.0.4`
+The public SemVer remains `0.1.0-alpha.6`. WiX/MSI uses the numeric package version `0.1.0.6`
 because Windows Installer does not accept an arbitrary prerelease label in ProductVersion.
 
 ## Run in development

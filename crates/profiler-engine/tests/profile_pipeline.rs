@@ -11,6 +11,7 @@ use profiler_core::{
 };
 use profiler_engine::{
     ProfileEngine, ProfileOptions, ProfileRequest, ProfileResult as EngineProfileResult,
+    continuous::{ContinuousProfileEngine, ContinuousProfileOptions, ContinuousProfileRequest},
     workspace::{
         WorkspaceSession, add_review_note, export_sanitized_run, findings_page, list_runs,
         open_run, set_review_status,
@@ -246,6 +247,158 @@ fn sanitized_exports_contain_no_source_paths_filenames_or_notes() {
     assert!(csv.starts_with("finding_token,object_token,code,severity,review_status,reviewed_at"));
     assert!(!csv.contains("offer.pdf"));
     assert!(!csv.contains("private review note"));
+}
+
+#[test]
+fn continuous_profile_reconciles_metadata_updates_and_bounds_snapshots() {
+    let fixture = Fixture::create();
+    let first = run_continuous_profile(&fixture, &RecordingProgress::default());
+    assert_eq!(first.run_kind, "initial");
+    assert_eq!(first.generation, 1);
+
+    let source = Connection::open(fixture.archive.join("database/mailvault.sqlite3"))
+        .expect("open source for metadata update");
+    source
+        .execute(
+            "UPDATE message_occurrences SET labels_json='[\"INBOX\",\"STARRED\"]',
+                    updated_at='2026-07-28T12:00:00Z' WHERE id=1",
+            [],
+        )
+        .expect("update occurrence labels");
+    drop(source);
+
+    let second = run_continuous_profile(&fixture, &RecordingProgress::default());
+    assert_eq!(second.run_kind, "incremental");
+    assert_eq!(second.generation, 2);
+    let profiler = Connection::open(&second.profiler_database).expect("open profiler database");
+    let labels: String = profiler
+        .query_row(
+            "SELECT labels_json FROM source_message_occurrences
+             WHERE snapshot_id=?1 AND source_occurrence_id=1",
+            [&second.source_snapshot_id],
+            |row| row.get(0),
+        )
+        .expect("load reconciled occurrence");
+    assert_eq!(labels, "[\"INBOX\",\"STARRED\"]");
+    let snapshots: i64 = profiler
+        .query_row("SELECT COUNT(*) FROM source_snapshots", [], |row| {
+            row.get(0)
+        })
+        .expect("count retained snapshots");
+    assert_eq!(snapshots, 1);
+}
+
+#[test]
+fn continuous_profile_reuses_successful_stat_and_retries_failures() {
+    let fixture = Fixture::create();
+    let first = run_continuous_profile(&fixture, &RecordingProgress::default());
+    let second = run_continuous_profile(&fixture, &RecordingProgress::default());
+    let profiler = Connection::open(&second.profiler_database).expect("open profiler database");
+
+    let first_success: i64 = profiler
+        .query_row(
+            "SELECT COUNT(*) FROM file_stat_observations
+             WHERE run_id=?1 AND sha256=?2",
+            params![first.run_id, HASH_AVAILABLE],
+            |row| row.get(0),
+        )
+        .expect("count initial success");
+    let second_success: i64 = profiler
+        .query_row(
+            "SELECT COUNT(*) FROM file_stat_observations
+             WHERE run_id=?1 AND sha256=?2",
+            params![second.run_id, HASH_AVAILABLE],
+            |row| row.get(0),
+        )
+        .expect("count repeated success");
+    let second_missing: i64 = profiler
+        .query_row(
+            "SELECT COUNT(*) FROM file_stat_observations
+             WHERE run_id=?1 AND sha256=?2",
+            params![second.run_id, HASH_MISSING],
+            |row| row.get(0),
+        )
+        .expect("count missing retry");
+    assert_eq!(first_success, 1);
+    assert_eq!(second_success, 0);
+    assert_eq!(second_missing, 1);
+}
+
+#[derive(Debug)]
+struct InterruptingProgress {
+    interrupted: Mutex<bool>,
+}
+
+impl InterruptingProgress {
+    fn new() -> Self {
+        Self {
+            interrupted: Mutex::new(false),
+        }
+    }
+}
+
+impl ProgressSink for InterruptingProgress {
+    fn send(&self, event: ProgressEvent) -> ProfilerResult<()> {
+        let mut interrupted = self.interrupted.lock().expect("interrupt mutex poisoned");
+        if !*interrupted
+            && event.stage == RunStage::MetadataInventory
+            && event.stage_state == StageState::Running
+        {
+            *interrupted = true;
+            return Err(profiler_core::ProfilerError::ProgressDelivery(
+                "controlled interruption".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn continuous_profile_resumes_the_same_run_after_committed_interruption() {
+    let fixture = Fixture::create();
+    let interrupted = run_continuous_profile_result(&fixture, &InterruptingProgress::new());
+    assert!(interrupted.is_err());
+    let database = fixture.workspace.join("profiler/profiler.sqlite3");
+    let profiler = Connection::open(&database).expect("open interrupted profiler database");
+    let interrupted_run: String = profiler
+        .query_row(
+            "SELECT id FROM profiler_runs ORDER BY created_at DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("load interrupted run");
+    drop(profiler);
+
+    let resumed = run_continuous_profile(&fixture, &RecordingProgress::default());
+    assert_eq!(resumed.run_id, interrupted_run);
+    assert!(resumed.resumed);
+    assert_eq!(resumed.resume_count, 1);
+}
+
+fn run_continuous_profile(fixture: &Fixture, progress: &dyn ProgressSink) -> EngineProfileResult {
+    run_continuous_profile_result(fixture, progress).expect("continuous profile succeeds")
+}
+
+fn run_continuous_profile_result(
+    fixture: &Fixture,
+    progress: &dyn ProgressSink,
+) -> ProfilerResult<EngineProfileResult> {
+    let mut options = ContinuousProfileOptions::default();
+    options.profile.inventory.batch_size = 1;
+    options.profile.file_stat.batch_size = 1;
+    options.profile.file_stat.workers = 1;
+    options.format_required = false;
+    options.retain_successful_snapshots = 1;
+    ContinuousProfileEngine.profile(
+        &ContinuousProfileRequest {
+            archive_root: fixture.archive.clone(),
+            workspace_root: fixture.workspace.clone(),
+            siegfried_path: None,
+            signature_path: None,
+            options,
+        },
+        progress,
+    )
 }
 
 fn run_profile(fixture: &Fixture, progress: &RecordingProgress) -> EngineProfileResult {

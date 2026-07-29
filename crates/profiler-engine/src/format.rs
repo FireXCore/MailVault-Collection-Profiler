@@ -434,9 +434,9 @@ fn resolve_object_path(archive_root: &Path, locator: &str) -> ProfilerResult<Pat
 }
 
 fn configuration_fingerprint(
-    request: &FormatIdentificationRequest,
+    _request: &FormatIdentificationRequest,
     tool: &FormatToolIdentity,
-    workers: u32,
+    _workers: u32,
 ) -> ProfilerResult<String> {
     let payload = serde_json::to_vec(&serde_json::json!({
         "contract": "mailvault-profiler-exact-format-v1",
@@ -446,9 +446,7 @@ fn configuration_fingerprint(
         "signatureVersion": tool.signature_version,
         "signatureSha256": tool.signature_sha256,
         "extensionEvidence": "symlink-alias-or-unchecked",
-        "batchSize": request.options.batch_size,
-        "workers": workers,
-        "timeoutSeconds": request.options.timeout_seconds,
+        "workContract": "content-addressed-selective-v2",
         "containerExpansion": false,
     }))
     .map_err(|error| {

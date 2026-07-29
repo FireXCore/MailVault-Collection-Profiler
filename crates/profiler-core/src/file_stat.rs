@@ -193,10 +193,15 @@ pub trait FileStatStore {
     fn load_file_stat_checkpoint(&self, run_id: &str)
     -> ProfilerResult<Option<FileStatCheckpoint>>;
 
-    fn count_file_stat_objects(&self, collection_id: &str) -> ProfilerResult<(u64, u64)>;
+    fn count_file_stat_objects(
+        &self,
+        run_id: &str,
+        collection_id: &str,
+    ) -> ProfilerResult<(u64, u64)>;
 
     fn load_file_stat_batch(
         &self,
+        run_id: &str,
         collection_id: &str,
         after_sha256: Option<&str>,
         limit: u32,

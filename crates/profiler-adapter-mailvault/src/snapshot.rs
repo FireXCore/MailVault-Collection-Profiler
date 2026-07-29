@@ -294,7 +294,7 @@ fn recover_or_reuse_snapshot(
     snapshot_database: &Path,
     manifest_path: &Path,
     archive_identity: &str,
-    expected_metrics: &profiler_core::ArchiveMetrics,
+    _expected_metrics: &profiler_core::ArchiveMetrics,
     sink: &dyn ProgressSink,
 ) -> ProfilerResult<SnapshotResult> {
     let started = Instant::now();
@@ -308,9 +308,6 @@ fn recover_or_reuse_snapshot(
         )));
     }
     let snapshot_metrics = read_metrics(&snapshot)?;
-    if &snapshot_metrics != expected_metrics {
-        return Err(ProfilerError::SourceChanged);
-    }
     let schema_version = read_schema_version_value(&snapshot)?;
     let snapshot_archive_identity = read_archive_identity_value(&snapshot)?;
     if snapshot_archive_identity != archive_identity {
@@ -352,7 +349,7 @@ fn recover_or_reuse_snapshot(
             snapshot_sha256,
             snapshot_bytes,
             schema_version,
-            source_metrics: expected_metrics.clone(),
+            source_metrics: snapshot_metrics.clone(),
             snapshot_metrics,
             created_at: OffsetDateTime::now_utc(),
         };

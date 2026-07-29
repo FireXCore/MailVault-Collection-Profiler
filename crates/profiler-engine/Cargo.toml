@@ -16,6 +16,7 @@ profiler-core = { path = "../profiler-core" }
 profiler-format-siegfried = { path = "../profiler-format-siegfried" }
 profiler-storage-sqlite = { path = "../profiler-storage-sqlite" }
 rayon.workspace = true
+rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -25,5 +26,4 @@ uuid.workspace = true
 workspace = true
 
 [dev-dependencies]
-rusqlite.workspace = true
 tempfile.workspace = true

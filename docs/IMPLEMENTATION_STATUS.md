@@ -1,40 +1,42 @@
-# Implementation status — 0.1.0-alpha.4
+# Implementation status — 0.1.0-alpha.6
 
 ## Implemented
 
-- read-only MailVault v3 preflight and SQLite snapshot;
-- physical inventory, content/occurrence separation and file-stat checks;
-- findings, append-only review, sanitized export and explorer UI;
-- exact format core/storage/engine/sidecar/CLI/desktop modules;
-- pinned Siegfried/PRONOM acquisition, verification and Tauri resource bundling;
-- schema migration 6 and format filtering/progress/resume contract;
-- publication-ready English/Persian documentation and sanitized screenshots.
+- read-only MailVault schema-v3 preflight and SQLite Online Backup snapshot;
+- stable collection binding with archive identity aliases and no path-based fallback;
+- full metadata reconciliation from every immutable source snapshot;
+- cumulative SHA-256 content projection with current/inactive state;
+- selective file-stat reuse for successful unchanged objects;
+- automatic retry for missing, mismatched, unavailable and I/O-error objects;
+- automatic exact-format identification in the physical profile pipeline;
+- Siegfried 1.11.6 and PRONOM v124 tool/signature evidence;
+- same-run resume after interrupted snapshot, inventory, file-stat or format stages;
+- initial, incremental and rebuild generations in one workspace;
+- bounded successful-snapshot retention and orphan cleanup;
+- continuous CLI watch with source-revision polling and retryable-error backoff;
+- schema migration 6 to 7;
+- Windows quality and real-runtime acceptance scripts.
 
-## Validated
+## Trusted predecessor evidence
 
-- complete Windows release configuration and documentation/privacy gate;
-- Rust formatting and strict workspace Clippy with warnings denied;
-- complete Rust test suite: 36 passed, 0 failed;
-- frontend TypeScript check and Vite production build;
-- native Tauri desktop compilation;
-- npm audit: 0 vulnerabilities;
-- Windows PowerShell 5.1 sidecar installation and independent verification;
-- pinned Siegfried `1.11.6` and PRONOM `v124` runtime identity;
-- Windows-safe home-relative signature argument contract;
-- real Alpha 3 workspace migration from schema 5 to 6;
-- full private 13,684-object exact-format run;
-- 13,684/13,684 object coverage and 6,466,878,455/6,466,878,455 byte coverage;
-- 13,636 identified, 46 unknown, 0 ambiguous and 0 tool errors;
-- 51 extension mismatches and 64 distinct PUIDs recorded for review;
-- canonical MailVault SHA-256 unchanged before and after identification;
-- sanitized aggregate acceptance evidence and evidence checksum manifest.
+Alpha 4 completed the Windows quality gate with 36 Rust tests and processed 13,684/13,684 real
+content objects with 13,636 identified, 46 unknown, zero ambiguous and zero tool errors. Alpha 6
+preserves that exact-format implementation and adds the continuous lifecycle around it.
 
-## Runtime status
+## Required before GitHub publication
 
-`0.1.0-alpha.4` is runtime green for the supplied private MailVault collection. Public Windows
-installers remain unsigned and the release is intended for controlled technical evaluation.
+- `cargo fmt`, strict workspace Clippy and all Rust tests;
+- TypeScript, Vite and native Tauri checks;
+- MSI and NSIS build;
+- real initial and immediate no-change profile;
+- real IMAP delta and duplicate-SHA reuse;
+- force-kill resume in all four stages;
+- 100-cycle bounded-growth soak;
+- independent rebuild equivalence;
+- unchanged canonical MailVault SHA-256;
+- sanitized public evidence and SHA256SUMS.
 
-## Deferred
+## Permanently outside this profiler
 
-Physical-profile pause/resume, full fixity, container expansion, JHOVE, extraction, OCR, semantic
-search, procurement classification, RMS integration and automatic application updates.
+OCR, text extraction, embeddings, vector databases, RAG, LLM classification, procurement semantics,
+RMS integration, attachment execution and container expansion.

@@ -24,7 +24,8 @@ pub(crate) fn run_file_stat(
             ProfilerError::Internal(format!("creating file-stat worker pool: {error}"))
         })?;
 
-    let (total_objects, total_bytes) = store.count_file_stat_objects(&request.collection_id)?;
+    let (total_objects, total_bytes) =
+        store.count_file_stat_objects(&request.run_id, &request.collection_id)?;
     let mut checkpoint = store
         .load_file_stat_checkpoint(&request.run_id)?
         .unwrap_or_else(FileStatCheckpoint::empty);
@@ -48,6 +49,7 @@ pub(crate) fn run_file_stat(
 
     loop {
         let batch = store.load_file_stat_batch(
+            &request.run_id,
             &request.collection_id,
             checkpoint.last_sha256.as_deref(),
             request.options.batch_size,
