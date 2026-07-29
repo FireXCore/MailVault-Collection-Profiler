@@ -144,10 +144,10 @@ function Get-OptionalFileState {
 
     $Item = Get-Item -LiteralPath $Path
     return [ordered]@{
-        Path          = $Item.FullName
-        Bytes         = $Item.Length
-        LastWriteTime = $Item.LastWriteTimeUtc.ToString('o')
-        SHA256        = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+        Path             = $Item.FullName
+        Bytes            = $Item.Length
+        LastWriteTimeUtc = $Item.LastWriteTimeUtc.ToString('o')
+        SHA256           = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
     }
 }
 
@@ -199,27 +199,49 @@ function Invoke-Profile {
         $CliArgs += @('--signature', $Signature)
     }
 
-    $Log = Join-Path $Evidence "alpha6-delta-$Nonce-$Label.log"
-    $Output = @(& $CliExecutable @CliArgs 2>&1)
-    $ExitCode = $LASTEXITCODE
+    $StdoutLog = Join-Path $Evidence "alpha6-delta-$Nonce-$Label.stdout.log"
+    $StderrLog = Join-Path $Evidence "alpha6-delta-$Nonce-$Label.stderr.log"
 
-    [System.IO.File]::WriteAllText(
-        $Log,
-        (($Output | ForEach-Object { $_.ToString() }) -join "`r`n").TrimEnd("`r", "`n") + "`r`n",
-        [System.Text.UTF8Encoding]::new($false)
-    )
+    Remove-Item `
+        -LiteralPath $StdoutLog, $StderrLog `
+        -Force `
+        -ErrorAction SilentlyContinue
 
-    $Output | ForEach-Object { Write-Host $_ }
+    $Process = Start-Process `
+        -FilePath $CliExecutable `
+        -ArgumentList $CliArgs `
+        -RedirectStandardOutput $StdoutLog `
+        -RedirectStandardError $StderrLog `
+        -PassThru `
+        -Wait
 
-    if ($ExitCode -ne 0) {
-        throw "Delta profile '$Label' failed with exit code $ExitCode. Log: $Log"
+    if ($Process.ExitCode -ne 0) {
+        $StderrTail = ''
+        if (Test-Path -LiteralPath $StderrLog -PathType Leaf) {
+            $StderrTail = (
+                Get-Content -LiteralPath $StderrLog -Tail 100 -ErrorAction SilentlyContinue
+            ) -join "`r`n"
+        }
+
+        throw @"
+Delta profile '$Label' failed with exit code $($Process.ExitCode).
+STDOUT: $StdoutLog
+STDERR: $StderrLog
+STDERR tail:
+$StderrTail
+"@
     }
 
-    return $Log
+    return [pscustomobject]@{
+        StdoutLog = $StdoutLog
+        StderrLog = $StderrLog
+    }
 }
 
 Push-Location $Repo
 try {
+    # The desktop and CLI packages both produce mailvault-profiler.exe in the
+    # default Cargo target directory. Build and run the CLI in an isolated target.
     $env:CARGO_TARGET_DIR = $CliTargetDir
 
     & $Cargo build --locked --release -p mailvault-profiler-cli --bin mailvault-profiler
@@ -253,8 +275,16 @@ MailVault object store manually. After the sync completes, return here.
     [void](Read-Host 'Press Enter after the first MailVault sync has completed')
 
     $FirstSourceStateBeforeProfile = Get-SourceState
-    $FirstLog = Invoke-Profile -Label 'first'
+    if (
+        $FirstSourceStateBeforeProfile.Database.SHA256 -eq
+        $BaselineSourceState.Database.SHA256
+    ) {
+        throw "The MailVault database hash did not change after the first requested sync."
+    }
+
+    $FirstExecution = Invoke-Profile -Label 'first'
     $FirstSourceStateAfterProfile = Get-SourceState
+
     Assert-SourceStateUnchanged `
         -Before $FirstSourceStateBeforeProfile `
         -After $FirstSourceStateAfterProfile `
@@ -296,8 +326,16 @@ Run the normal MailVault IMAP sync again. After the sync completes, return here.
     [void](Read-Host 'Press Enter after the second MailVault sync has completed')
 
     $SecondSourceStateBeforeProfile = Get-SourceState
-    $SecondLog = Invoke-Profile -Label 'second'
+    if (
+        $SecondSourceStateBeforeProfile.Database.SHA256 -eq
+        $FirstSourceStateAfterProfile.Database.SHA256
+    ) {
+        throw "The MailVault database hash did not change after the second requested sync."
+    }
+
+    $SecondExecution = Invoke-Profile -Label 'second'
     $SecondSourceStateAfterProfile = Get-SourceState
+
     Assert-SourceStateUnchanged `
         -Before $SecondSourceStateBeforeProfile `
         -After $SecondSourceStateAfterProfile `
@@ -333,15 +371,15 @@ Run the normal MailVault IMAP sync again. After the sync completes, return here.
         MarkerPath                   = $Marker
         SHA256                       = $Sha
         BaselineSourceState          = $BaselineSourceState
-        FirstSourceState              = $FirstSourceStateAfterProfile
-        SecondSourceState             = $SecondSourceStateAfterProfile
+        FirstSourceState             = $FirstSourceStateAfterProfile
+        SecondSourceState            = $SecondSourceStateAfterProfile
         FirstProfilerReadOnly        = $true
         SecondProfilerReadOnly       = $true
         Before                       = $Before
         First                        = $First
         Second                       = $Second
-        FirstLog                     = $FirstLog
-        SecondLog                    = $SecondLog
+        FirstExecution               = $FirstExecution
+        SecondExecution              = $SecondExecution
         RecordedAtUtc                = [DateTime]::UtcNow.ToString('o')
     }
 
