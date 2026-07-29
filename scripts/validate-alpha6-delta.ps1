@@ -1,55 +1,360 @@
 param(
-    [Parameter(Mandatory=$true)][string]$ArchiveRoot,
-    [Parameter(Mandatory=$true)][string]$WorkspaceRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$ArchiveRoot,
+
+    [Parameter(Mandatory = $true)]
+    [string]$WorkspaceRoot,
+
     [string]$Siegfried,
-    [string]$Signature
+    [string]$Signature,
+
+    [ValidateRange(1, 20)]
+    [int]$RetainSuccessfulSnapshots = 2
 )
+
 Set-StrictMode -Version Latest
-$ErrorActionPreference='Stop'
-$Repo=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$ProfilerDb=Join-Path $WorkspaceRoot 'profiler\profiler.sqlite3'
-if(!(Test-Path -LiteralPath $ProfilerDb)){throw 'Run validate-alpha6-real.ps1 first.'}
-$Evidence=Join-Path $WorkspaceRoot 'acceptance-evidence'
-New-Item -ItemType Directory -Force -Path $Evidence|Out-Null
-$Marker=Join-Path $Evidence 'alpha6-duplicate-sha-marker.bin'
-$Bytes=[Text.Encoding]::UTF8.GetBytes("MailVault Alpha 6 duplicate SHA acceptance marker`ncontract=v1`n")
-[IO.File]::WriteAllBytes($Marker,$Bytes)
-$Sha=(Get-FileHash -LiteralPath $Marker -Algorithm SHA256).Hash.ToLowerInvariant()
-$Python=@'
-import json,sqlite3,sys
-c=sqlite3.connect(sys.argv[1]);sha=sys.argv[2]
-run=c.execute("select id,generation,source_snapshot_id from profiler_runs where state='succeeded' order by generation desc limit 1").fetchone()
-metrics=json.loads(c.execute('select source_metrics_json from source_snapshots where id=?',(run[2],)).fetchone()[0])
-obj=c.execute("select count(*),coalesce(max(occurrence_count),0),coalesce(max(format_state),'absent'),coalesce(max(availability_state),'absent'),coalesce(max(size_state),'absent') from content_objects where active=1 and sha256=?",(sha,)).fetchone()
-print(json.dumps({'run':run[0],'generation':run[1],'metrics':metrics,'objectRows':obj[0],'occurrences':obj[1],'formatState':obj[2],'availability':obj[3],'sizeState':obj[4]}))
-'@
-$Audit=Join-Path $env:TEMP 'mailvault-alpha6-delta.py'
-Set-Content -LiteralPath $Audit -Value $Python -Encoding UTF8
-function Read-State { (python $Audit $ProfilerDb $Sha|ConvertFrom-Json) }
-function Invoke-Profile {
-    $Args=@('run','--locked','--release','-p','mailvault-profiler-cli','--bin','mailvault-profiler','--',
-        'profile','--archive',$ArchiveRoot,'--workspace',$WorkspaceRoot)
-    if($Siegfried){$Args+=@('--siegfried',$Siegfried)}
-    if($Signature){$Args+=@('--signature',$Signature)}
-    Push-Location $Repo
-    try { & cargo @Args; if($LASTEXITCODE -ne 0){throw 'Delta profile failed.'} }
-    finally { Pop-Location }
+$ErrorActionPreference = 'Stop'
+
+$Repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$Cargo = (Get-Command cargo.exe -ErrorAction Stop).Source
+$CliTargetDir = Join-Path $Repo 'target-alpha6-cli-delta'
+$CliExecutable = Join-Path $CliTargetDir 'release\mailvault-profiler.exe'
+$PreviousCargoTargetDir = $env:CARGO_TARGET_DIR
+
+$ProfilerDb = Join-Path $WorkspaceRoot 'profiler\profiler.sqlite3'
+$SourceDb = Join-Path $ArchiveRoot 'database\mailvault.sqlite3'
+$Evidence = Join-Path $WorkspaceRoot 'acceptance-evidence'
+
+foreach ($Required in @($ProfilerDb, $SourceDb)) {
+    if (-not (Test-Path -LiteralPath $Required -PathType Leaf)) {
+        throw "Required file is missing: $Required"
+    }
 }
-$Before=Read-State
-Write-Host "Attach this exact file to one new email, run MailVault IMAP sync, then press Enter:`n$Marker`nSHA-256: $Sha" -ForegroundColor Cyan
-[void](Read-Host)
-Invoke-Profile
-$First=Read-State
-if($First.generation -le $Before.generation){throw 'Generation did not advance after first real delta.'}
-if($First.objectRows -ne 1){throw 'The marker did not produce exactly one active content object.'}
-if($First.occurrences -lt 1){throw 'The marker occurrence was not projected.'}
-if($First.availability -ne 'available' -or $First.sizeState -ne 'match'){throw 'The marker did not pass file-stat.'}
-if($First.formatState -eq 'uninspected' -or $First.formatState -eq 'tool_error'){throw 'The marker did not complete exact-format profiling.'}
-Write-Host 'Send the same marker file in a second email, sync MailVault again, then press Enter.' -ForegroundColor Cyan
-[void](Read-Host)
-Invoke-Profile
-$Second=Read-State
-if($Second.generation -le $First.generation){throw 'Generation did not advance after duplicate-SHA delta.'}
-if($Second.objectRows -ne 1){throw 'Duplicate attachment created more than one content object.'}
-if($Second.occurrences -le $First.occurrences){throw 'Duplicate attachment did not add an occurrence.'}
-[pscustomobject]@{Status='REAL_DELTA_AND_SHA_REUSE_GREEN';SHA256=$Sha;Before=$Before;First=$First;Second=$Second}|ConvertTo-Json -Depth 8
+
+New-Item -ItemType Directory -Force -Path $Evidence | Out-Null
+
+$Nonce = [Guid]::NewGuid().ToString('N')
+$Marker = Join-Path $Evidence "alpha6-duplicate-sha-marker-$Nonce.bin"
+$MarkerText = @"
+MailVault Alpha 6 duplicate SHA acceptance marker
+contract=v1
+nonce=$Nonce
+"@
+$MarkerBytes = [System.Text.Encoding]::UTF8.GetBytes(
+    $MarkerText.TrimEnd("`r", "`n") + "`n"
+)
+[System.IO.File]::WriteAllBytes($Marker, $MarkerBytes)
+
+$Sha = (
+    Get-FileHash -LiteralPath $Marker -Algorithm SHA256
+).Hash.ToLowerInvariant()
+
+$Audit = Join-Path $env:TEMP "mailvault-alpha6-delta-$Nonce.py"
+$Python = @'
+import json
+import sqlite3
+import sys
+
+database = sys.argv[1]
+sha256 = sys.argv[2]
+
+connection = sqlite3.connect(database)
+assert connection.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+assert not connection.execute("PRAGMA foreign_key_check").fetchall()
+
+run = connection.execute(
+    """
+    SELECT id, generation, source_snapshot_id
+    FROM profiler_runs
+    WHERE state = 'succeeded'
+    ORDER BY generation DESC
+    LIMIT 1
+    """
+).fetchone()
+assert run is not None, "no succeeded profiler run exists"
+
+snapshot = connection.execute(
+    "SELECT source_metrics_json FROM source_snapshots WHERE id = ?",
+    (run[2],),
+).fetchone()
+assert snapshot is not None, "latest run has no source snapshot"
+
+metrics = json.loads(snapshot[0])
+
+content_object = connection.execute(
+    """
+    SELECT
+        COUNT(*),
+        COALESCE(MAX(occurrence_count), 0),
+        COALESCE(MAX(format_state), 'absent'),
+        COALESCE(MAX(availability_state), 'absent'),
+        COALESCE(MAX(size_state), 'absent')
+    FROM content_objects
+    WHERE active = 1
+      AND sha256 = ?
+    """,
+    (sha256,),
+).fetchone()
+
+print(json.dumps({
+    "run": run[0],
+    "generation": run[1],
+    "sourceSnapshotId": run[2],
+    "metrics": metrics,
+    "objectRows": content_object[0],
+    "occurrences": content_object[1],
+    "formatState": content_object[2],
+    "availability": content_object[3],
+    "sizeState": content_object[4],
+}))
+'@
+
+[System.IO.File]::WriteAllText(
+    $Audit,
+    $Python.TrimEnd("`r", "`n") + "`n",
+    [System.Text.UTF8Encoding]::new($false)
+)
+
+function Restore-CargoTargetDirectory {
+    if ($null -eq $PreviousCargoTargetDir) {
+        Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue
+    } else {
+        $env:CARGO_TARGET_DIR = $PreviousCargoTargetDir
+    }
+}
+
+function Read-State {
+    $Output = & python $Audit $ProfilerDb $Sha
+    if ($LASTEXITCODE -ne 0) {
+        throw "Delta state audit failed with exit code $LASTEXITCODE."
+    }
+
+    return ($Output | ConvertFrom-Json)
+}
+
+function Get-OptionalFileState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $null
+    }
+
+    $Item = Get-Item -LiteralPath $Path
+    return [ordered]@{
+        Path          = $Item.FullName
+        Bytes         = $Item.Length
+        LastWriteTime = $Item.LastWriteTimeUtc.ToString('o')
+        SHA256        = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+    }
+}
+
+function Get-SourceState {
+    return [ordered]@{
+        Database = Get-OptionalFileState -Path $SourceDb
+        Wal      = Get-OptionalFileState -Path ($SourceDb + '-wal')
+    }
+}
+
+function Assert-SourceStateUnchanged {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Before,
+
+        [Parameter(Mandatory = $true)]
+        [object]$After,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Label
+    )
+
+    $BeforeJson = $Before | ConvertTo-Json -Depth 6 -Compress
+    $AfterJson = $After | ConvertTo-Json -Depth 6 -Compress
+
+    if ($BeforeJson -ne $AfterJson) {
+        throw "The profiler changed MailVault database/WAL state during '$Label'."
+    }
+}
+
+function Invoke-Profile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Label
+    )
+
+    $CliArgs = @(
+        'profile',
+        '--archive', $ArchiveRoot,
+        '--workspace', $WorkspaceRoot,
+        '--retain-successful-snapshots', $RetainSuccessfulSnapshots.ToString()
+    )
+
+    if ($Siegfried) {
+        $CliArgs += @('--siegfried', $Siegfried)
+    }
+
+    if ($Signature) {
+        $CliArgs += @('--signature', $Signature)
+    }
+
+    $Log = Join-Path $Evidence "alpha6-delta-$Nonce-$Label.log"
+    $Output = @(& $CliExecutable @CliArgs 2>&1)
+    $ExitCode = $LASTEXITCODE
+
+    [System.IO.File]::WriteAllText(
+        $Log,
+        (($Output | ForEach-Object { $_.ToString() }) -join "`r`n").TrimEnd("`r", "`n") + "`r`n",
+        [System.Text.UTF8Encoding]::new($false)
+    )
+
+    $Output | ForEach-Object { Write-Host $_ }
+
+    if ($ExitCode -ne 0) {
+        throw "Delta profile '$Label' failed with exit code $ExitCode. Log: $Log"
+    }
+
+    return $Log
+}
+
+Push-Location $Repo
+try {
+    $env:CARGO_TARGET_DIR = $CliTargetDir
+
+    & $Cargo build --locked --release -p mailvault-profiler-cli --bin mailvault-profiler
+    if ($LASTEXITCODE -ne 0) {
+        throw "Building the isolated Alpha 6 delta CLI failed with exit code $LASTEXITCODE."
+    }
+
+    if (-not (Test-Path -LiteralPath $CliExecutable -PathType Leaf)) {
+        throw "Isolated CLI executable was not produced: $CliExecutable"
+    }
+
+    $Before = Read-State
+    if ([int64]$Before.objectRows -ne 0) {
+        throw "The generated marker SHA already exists in the active profile projection."
+    }
+
+    $BaselineSourceState = Get-SourceState
+
+    Write-Host @"
+
+STEP 1 OF 2
+Attach this exact file to ONE new email sent to a mailbox archived by MailVault:
+
+$Marker
+
+SHA-256: $Sha
+
+Then run the normal MailVault IMAP sync. Do not copy the marker into the
+MailVault object store manually. After the sync completes, return here.
+"@ -ForegroundColor Cyan
+    [void](Read-Host 'Press Enter after the first MailVault sync has completed')
+
+    $FirstSourceStateBeforeProfile = Get-SourceState
+    $FirstLog = Invoke-Profile -Label 'first'
+    $FirstSourceStateAfterProfile = Get-SourceState
+    Assert-SourceStateUnchanged `
+        -Before $FirstSourceStateBeforeProfile `
+        -After $FirstSourceStateAfterProfile `
+        -Label 'first delta profile'
+
+    $First = Read-State
+
+    if ([int64]$First.generation -le [int64]$Before.generation) {
+        throw 'Generation did not advance after the first real delta.'
+    }
+    if ([int64]$First.objectRows -ne 1) {
+        throw 'The marker did not produce exactly one active content object.'
+    }
+    if ([int64]$First.occurrences -lt 1) {
+        throw 'The marker occurrence was not projected.'
+    }
+    if ($First.availability -ne 'available' -or $First.sizeState -ne 'match') {
+        throw 'The marker did not pass file-stat.'
+    }
+    if ($First.formatState -in @('uninspected', 'tool_error', 'absent')) {
+        throw "The marker did not complete exact-format profiling: $($First.formatState)"
+    }
+    if (
+        [int64]$First.metrics.attachmentOccurrences -le
+        [int64]$Before.metrics.attachmentOccurrences
+    ) {
+        throw 'Attachment occurrence metrics did not advance after the first delta.'
+    }
+
+    Write-Host @"
+
+STEP 2 OF 2
+Send the SAME marker file in a SECOND new email:
+
+$Marker
+
+Run the normal MailVault IMAP sync again. After the sync completes, return here.
+"@ -ForegroundColor Cyan
+    [void](Read-Host 'Press Enter after the second MailVault sync has completed')
+
+    $SecondSourceStateBeforeProfile = Get-SourceState
+    $SecondLog = Invoke-Profile -Label 'second'
+    $SecondSourceStateAfterProfile = Get-SourceState
+    Assert-SourceStateUnchanged `
+        -Before $SecondSourceStateBeforeProfile `
+        -After $SecondSourceStateAfterProfile `
+        -Label 'second delta profile'
+
+    $Second = Read-State
+
+    if ([int64]$Second.generation -le [int64]$First.generation) {
+        throw 'Generation did not advance after the duplicate-SHA delta.'
+    }
+    if ([int64]$Second.objectRows -ne 1) {
+        throw 'Duplicate attachment created more than one active content object.'
+    }
+    if ([int64]$Second.occurrences -le [int64]$First.occurrences) {
+        throw 'Duplicate attachment did not add an occurrence.'
+    }
+    if (
+        [int64]$Second.metrics.attachmentOccurrences -le
+        [int64]$First.metrics.attachmentOccurrences
+    ) {
+        throw 'Attachment occurrence metrics did not advance after the duplicate-SHA delta.'
+    }
+    if ($Second.availability -ne 'available' -or $Second.sizeState -ne 'match') {
+        throw 'The duplicate marker no longer passes file-stat.'
+    }
+    if ($Second.formatState -in @('uninspected', 'tool_error', 'absent')) {
+        throw "The duplicate marker has an invalid format state: $($Second.formatState)"
+    }
+
+    $Summary = [ordered]@{
+        Status                       = 'REAL_DELTA_AND_SHA_REUSE_GREEN'
+        CandidateHead                = (git rev-parse HEAD).Trim()
+        MarkerPath                   = $Marker
+        SHA256                       = $Sha
+        BaselineSourceState          = $BaselineSourceState
+        FirstSourceState              = $FirstSourceStateAfterProfile
+        SecondSourceState             = $SecondSourceStateAfterProfile
+        FirstProfilerReadOnly        = $true
+        SecondProfilerReadOnly       = $true
+        Before                       = $Before
+        First                        = $First
+        Second                       = $Second
+        FirstLog                     = $FirstLog
+        SecondLog                    = $SecondLog
+        RecordedAtUtc                = [DateTime]::UtcNow.ToString('o')
+    }
+
+    $SummaryPath = Join-Path $Evidence "alpha6-real-delta-$Nonce.json"
+    [System.IO.File]::WriteAllText(
+        $SummaryPath,
+        ($Summary | ConvertTo-Json -Depth 12) + "`n",
+        [System.Text.UTF8Encoding]::new($false)
+    )
+
+    $Summary | ConvertTo-Json -Depth 12
+    Get-FileHash -LiteralPath $SummaryPath -Algorithm SHA256
+} finally {
+    Restore-CargoTargetDirectory
+    Pop-Location
+}
