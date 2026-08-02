@@ -333,11 +333,16 @@ fn mark_failure(store: &ProfilerStore, run_id: &str, error: &ProfilerError) -> P
 
 pub fn source_revision_fingerprint(preflight: &PreflightReport) -> ProfilerResult<String> {
     let mut digest = Sha256::new();
-    digest.update(b"mailvault-source-revision-v2\0");
+    digest.update(b"mailvault-source-revision-v3\0");
+
+    // SQLite's shared-memory file is coordination state, not archive content.
+    // Read-only connections may update its metadata/read marks, so including
+    // `-shm` makes an unchanged WAL archive appear revised on every poll.
+    // Database and WAL metadata plus stable archive metrics form the watch
+    // signal; the consistent snapshot remains the authoritative content proof.
     for path in [
         PathBuf::from(&preflight.database_path),
         PathBuf::from(format!("{}-wal", preflight.database_path)),
-        PathBuf::from(format!("{}-shm", preflight.database_path)),
     ] {
         digest.update(path.to_string_lossy().as_bytes());
         match fs::metadata(&path) {
@@ -618,4 +623,100 @@ fn now_text() -> String {
 fn to_u64(value: i64) -> ProfilerResult<u64> {
     u64::try_from(value)
         .map_err(|_| ProfilerError::Internal("negative continuous-profile counter".into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use profiler_core::{ArchiveMetrics, LockState};
+    use time::OffsetDateTime;
+
+    fn preflight_report(database: &Path) -> PreflightReport {
+        PreflightReport {
+            adapter: "mailvault".into(),
+            compatible: true,
+            archive_root: database
+                .parent()
+                .expect("database parent")
+                .to_string_lossy()
+                .into_owned(),
+            database_path: database.to_string_lossy().into_owned(),
+            database_bytes: fs::metadata(database).expect("database metadata").len(),
+            archive_identity: Some("archive-id".into()),
+            archive_identity_aliases: Vec::new(),
+            schema_version: Some(3),
+            journal_mode: Some("wal".into()),
+            lock_state: LockState::Absent,
+            metrics: ArchiveMetrics {
+                accounts: 1,
+                messages: 2,
+                message_occurrences: 2,
+                mime_parts: 3,
+                attachment_occurrences: 1,
+                blobs: 1,
+                blob_bytes: 4,
+                message_relations: 0,
+                participants: 2,
+            },
+            checks: Vec::new(),
+            warnings_count: 0,
+            errors_count: 0,
+            inspected_at: OffsetDateTime::UNIX_EPOCH,
+        }
+    }
+
+    #[test]
+    fn source_revision_ignores_sqlite_shared_memory_churn() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let database = directory.path().join("mailvault.sqlite3");
+        let wal = PathBuf::from(format!("{}-wal", database.to_string_lossy()));
+        let shm = PathBuf::from(format!("{}-shm", database.to_string_lossy()));
+
+        fs::write(&database, b"database").expect("write database");
+        fs::write(&wal, b"wal").expect("write wal");
+        fs::write(&shm, b"shared-memory-a").expect("write shm");
+
+        let report = preflight_report(&database);
+        let before = source_revision_fingerprint(&report).expect("fingerprint before");
+
+        fs::write(&shm, b"shared-memory-b-with-different-size").expect("rewrite shm");
+        let after = source_revision_fingerprint(&report).expect("fingerprint after");
+
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn source_revision_changes_when_wal_changes() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let database = directory.path().join("mailvault.sqlite3");
+        let wal = PathBuf::from(format!("{}-wal", database.to_string_lossy()));
+
+        fs::write(&database, b"database").expect("write database");
+        fs::write(&wal, b"wal-a").expect("write wal");
+
+        let report = preflight_report(&database);
+        let before = source_revision_fingerprint(&report).expect("fingerprint before");
+
+        fs::write(&wal, b"wal-b-with-different-size").expect("rewrite wal");
+        let after = source_revision_fingerprint(&report).expect("fingerprint after");
+
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn source_revision_changes_when_logical_metrics_change() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let database = directory.path().join("mailvault.sqlite3");
+
+        fs::write(&database, b"database").expect("write database");
+
+        let before_report = preflight_report(&database);
+        let mut after_report = before_report.clone();
+        after_report.metrics.messages += 1;
+
+        let before = source_revision_fingerprint(&before_report).expect("fingerprint before");
+        let after = source_revision_fingerprint(&after_report).expect("fingerprint after");
+
+        assert_ne!(before, after);
+    }
 }
