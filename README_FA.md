@@ -4,162 +4,89 @@
 
 # MailVault Collection Profiler
 
-**موجودی فیزیکی، کنترل کیفیت و تشخیص دقیق فرمت فایل برای آرشیوهای MailVault؛ کاملاً محلی و فقط‌خواندنی.**
+**پروفایل فنی محلی، فقط‌خواندنی، پیوسته و قابل Resume برای آرشیوهای MailVault.**
 
-[English](README.md) · [دریافت](https://github.com/FireXCore/mailvault-collection-profiler/releases) · [شروع سریع](docs/GETTING_STARTED.md) · [تشخیص دقیق فرمت](docs/FORMAT_IDENTIFICATION.md) · [امنیت](SECURITY.md)
+[English](README.md) · [دریافت](https://github.com/FireXCore/mailvault-collection-profiler/releases) · [شروع سریع](docs/GETTING_STARTED.md) · [امنیت](SECURITY.md)
 
-> **نسخه توسعه‌ای:** `0.1.0-alpha.4` مرحله تشخیص دقیق فرمت را به‌صورت Versioned، Resume-safe و
-> قابل ممیزی اضافه می‌کند. Build ویندوز، Siegfried `1.11.6` و Signature Database استاندارد
-> PRONOM `v124` را به‌صورت Pin‌شده همراه برنامه بسته‌بندی می‌کند. آرشیو MailVault تغییر نمی‌کند.
+> `0.1.0-alpha.6` آخرین نسخه Feature است. این نسخه Profile اولیه، ادامه Incremental، Resume همان Run
+> پس از قطع، Retry فایل‌های ناموفق و تشخیص خودکار فرمت با Siegfried `1.11.6` و PRONOM `v124` را
+> در یک Pipeline واحد ادغام می‌کند. بعد از این Release فقط Maintenance، Security و Compatibility مجاز است.
 
-## این برنامه دقیقاً چه کاری می‌کند؟
-
-MailVault مدرک اصلی ایمیل را نگه می‌دارد. Profiler یک Index فنی و قابل بازسازی روی همان مدرک می‌سازد:
+## Pipeline نهایی
 
 ```text
 MailVault فقط‌خواندنی
-  ← Snapshot سازگار SQLite
-  ← Physical Inventory
-  ← هویت دقیق SHA-256 و تاریخچه occurrence
-  ← کنترل فیزیکی فایل‌ها
-  ← تشخیص دقیق فرمت و PUID
-  ← Explorer دسکتاپ و CLI
+  → Snapshot سازگار با SQLite Online Backup
+  → Reconciliation کامل metadata
+  → Projection تجمعی بر پایه SHA-256
+  → File-stat انتخابی و Retry خطاها
+  → Exact-format خودکار و PUID
+  → Generation موفق + Retention محدود Snapshot
 ```
 
-Profiler ایمیل دانلود نمی‌کند، MailVault را تغییر نمی‌دهد، فایل را اجرا نمی‌کند، OCR انجام نمی‌دهد،
-ZIP/RAR را باز نمی‌کند، سند را Invoice یا Quotation تشخیص نمی‌دهد و چیزی در RMS نمی‌نویسد.
+اجرای بعدی روی همان Workspace، Metadata Snapshot جدید را کامل مقایسه می‌کند اما File-stat و Format
+موفق و بدون تغییر را دوباره اجرا نمی‌کند. Objectهای Missing، Mismatch، Unavailable یا Tool Error در
+Run بعد دوباره امتحان می‌شوند. قطع Process باعث ساخت Profile جدید یا شروع از صفر نمی‌شود؛ همان Run و
+Checkpointهای Commit‌شده ادامه پیدا می‌کنند.
 
-## مبنای واقعی طراحی
+## مبنای واقعی
 
 | معیار | مقدار ثبت‌شده |
 |---|---:|
-| حجم آرشیو | حدود ۲۰ تا ۳۰ گیگابایت |
 | پیام | 17,296 |
 | MIME part | 54,450 |
 | Content object | 13,684 |
-| Content occurrence | 22,068 |
 | Message relationship | 12,115 |
-| حجم Blobهای منحصربه‌فرد | 6,467,253,277 بایت |
-| Findings مرحله فیزیکی | 1,484 |
-| Warning / Error | 2 / 0 |
+| Blob bytes | 6,467,253,277 |
 
-Alpha 3 روی آرشیو واقعی Windows اعتبارسنجی شد. Alpha 4 همان Baseline را حفظ می‌کند، Migration شماره
-`0006` را اضافه می‌کند و اجرای خصوصی کامل تشخیص فرمت را نیز با پوشش 13,684 از 13,684 Object،
-13,636 مورد شناسایی‌شده، 46 مورد Unknown، صفر Ambiguous و صفر Tool error با موفقیت پشت سر گذاشته
-است. SHA-256 دیتابیس اصلی MailVault قبل و بعد از اجرا بدون تغییر باقی ماند.
+Alpha 4 روی Windows با ۳۶ تست Rust و ۱۳٬۶۸۴/۱۳٬۶۸۴ Object سبز شد: ۱۳٬۶۳۶ Identified، ۴۶
+Unknown، صفر Ambiguous و صفر Tool Error. Alpha 6 باید Matrix واقعی Initial، No-change، Delta،
+Force-kill، Soak و Rebuild equivalence را قبل از انتشار GitHub پاس کند.
 
-## قابلیت‌های Alpha 4
-
-- اجرای Identification فقط روی فایل‌های منحصربه‌فرد، نه هر occurrence تکراری؛
-- Siegfried `1.11.6` و PRONOM `v124` Pin‌شده؛
-- ثبت SHA-256 ابزار و Signature، نسخه‌ها، زمان ساخت و Identifierها؛
-- نگهداری تمام Matchها و انتخاب Primary Assertion بدون حذف Ambiguity؛
-- ذخیره PUID، نام و نسخه فرمت، MIME، Evidence basis، Warning و Format class؛
-- وضعیت‌های `identified`، `unknown`، `ambiguous`، `empty`، `skipped_unavailable` و `tool_error`؛
-- ثبت Extension mismatch فقط وقتی Alias امن با Extension واقعاً بررسی شده باشد؛
-- Batch محدود، Timeout، محدودیت خروجی Process و جداسازی خودکار Batch خراب؛
-- Checkpoint/Resume براساس Configuration fingerprint؛
-- Lock اختصاصی Workspace برای جلوگیری از دو Writer هم‌زمان؛
-- عدم Container expansion، OCR، Preview و Classification تجاری.
-
-<p align="center"><img src="docs/assets/screenshots/07-exact-format-identification-ready.png" alt="داشبورد تشخیص دقیق فرمت" /></p>
-
-<p align="center"><img src="docs/assets/screenshots/08-format-assertion-detail.png" alt="جزئیات Format Assertion" /></p>
-
-<p align="center"><img src="docs/assets/screenshots/09-alpha4-architecture.png" alt="مرز معماری Alpha 4" /></p>
-
-## اجرای CLI
-
-ابتدا Workspace و Run فیزیکی را پیدا کن:
+## اجرای کامل CLI
 
 ```powershell
-.\target\release\mailvault-profiler.exe runs list `
-  --workspace "E:\MailVault-Profiler-Alpha4" `
-  --json
-```
-
-Toolchain را Probe کن:
-
-```powershell
-.\target\release\mailvault-profiler.exe formats probe `
+.\target\release\mailvault-profiler.exe profile `
+  --archive "E:\MailVault-E" `
+  --workspace "E:\MailVault-Profiler-Alpha6" `
   --siegfried ".\tools\siegfried\windows-x86_64\sf.exe" `
   --signature ".\tools\siegfried\windows-x86_64\default.sig" `
-  --json
+  --retain-successful-snapshots 2
 ```
 
-Identification را اجرا کن:
+برای ادامه دائمی بعد از Syncهای جدید:
 
 ```powershell
-.\target\release\mailvault-profiler.exe formats identify `
-  --workspace "E:\MailVault-Profiler-Alpha4" `
-  --run "<physical-profile-run-id>" `
-  --siegfried ".\tools\siegfried\windows-x86_64\sf.exe" `
-  --signature ".\tools\siegfried\windows-x86_64\default.sig" `
-  --batch-size 2048 `
-  --workers 0 `
-  --timeout-seconds 900 `
-  --resume true `
-  --allow-migration `
-  1> format-result.json `
-  2> format-progress.jsonl
+.\target\release\mailvault-profiler.exe profile `
+  --archive "E:\MailVault-E" `
+  --workspace "E:\MailVault-Profiler-Alpha6" `
+  --watch `
+  --poll-seconds 300
 ```
 
-راهنمای کامل: [تشخیص دقیق فرمت](docs/FORMAT_IDENTIFICATION.md) و
-[Runbook اجرایی](docs/FORMAT_IDENTIFICATION_RUNBOOK.md).
-
-## Build از Source
+## Gate نهایی
 
 ```powershell
-npm ci
-.\scripts\install-siegfried.ps1
-.\scripts\quality.ps1
-npm run tauri:desktop:bundle
+.\scripts\quality-alpha6.ps1 -BuildInstallers
+.\scripts\validate-alpha6-real.ps1 ...
+.\scripts\validate-alpha6-delta.ps1 ...
+.\scripts\validate-alpha6-crash.ps1 ...
+.\scripts\validate-alpha6-soak.ps1 -Cycles 100 ...
+.\scripts\validate-alpha6-rebuild-equivalence.ps1 ...
 ```
 
-فایل‌های تولیدشده `sf.exe`، `default.sig` و `tool-manifest.json` داخل Git Commit نمی‌شوند؛ Release
-Workflow آن‌ها را از Release رسمی دریافت، Hash را بررسی و به‌عنوان Resource داخل Installer قرار می‌دهد.
+راهنماها: [Continuous profiling](docs/CONTINUOUS_PROFILING.md)،
+[قرارداد Validation](docs/VALIDATION_0.1.0-alpha.6.md)،
+[پذیرش واقعی فارسی](docs/ALPHA6_REAL_ACCEPTANCE_FA.md) و
+[Release Notes](docs/releases/v0.1.0-alpha.6.md).
 
-## وضعیت Validation
+## خارج از Scope
 
-در محیط فعلی این موارد Pass شده‌اند:
-
-- TypeScript type-check و Vite production build؛
-- Parse نحوی تمام فایل‌های Rust با Tree-sitter؛
-- Migration دیتابیس واقعی Alpha 3 از Schema 5 به 6؛
-- `quick_check` و `foreign_key_check`؛
-- حفظ 13,684 Object، 22,068 Occurrence و 1,484 Finding؛
-- ثابت‌ماندن SHA-256 دیتابیس Source؛
-- Projection آزمایشی Format Assertion روی Schema مهاجرت‌داده‌شده.
-
-در Container فعلی Rust toolchain وجود نداشت؛ بنابراین ادعای دروغ درباره `cargo check`، Clippy، تست‌های
-Rust، Build Native Tauri یا اجرای واقعی Siegfried نشده است. CI ویندوز برای اجرای همین Gateهای کامل
-تنظیم شده است.
-
-گزارش: [Validation Alpha 4](docs/VALIDATION_0.1.0-alpha.4.md).
-
-## مستندات اصلی
-
-- [فهرست کامل](docs/INDEX.md)
-- [شروع سریع](docs/GETTING_STARTED.md)
-- [نصب Windows](docs/INSTALLATION_WINDOWS.md)
-- [راهنمای GUI](docs/GUI_GUIDE.md)
-- [مرجع CLI](docs/CLI_REFERENCE.md)
-- [تشخیص دقیق فرمت](docs/FORMAT_IDENTIFICATION.md)
-- [Runbook تشخیص فرمت](docs/FORMAT_IDENTIFICATION_RUNBOOK.md)
-- [معماری](docs/ARCHITECTURE.md)
-- [مدل امنیتی](docs/SECURITY_MODEL.md)
-- [حریم خصوصی](docs/PRIVACY.md)
-- [Baseline واقعی](docs/REAL_ARCHIVE_BASELINE.md)
-- [Release Notes Alpha 4](docs/releases/v0.1.0-alpha.4.md)
-
-## خارج از Scope فعلی
-
-Resume اجرای Physical Profile قطع‌شده، Full Fixity Hash، Container expansion، JHOVE، استخراج متن،
-OCR، Embedding، LLM، تشخیص Invoice/Quotation، اتصال خودکار به RFQ و هر نوع نوشتن در RMS.
+OCR، استخراج متن، Embedding، Vector DB، RAG، LLM، Classification تجاری، RMS integration، اجرای
+Attachment و Container expansion داخل این Profiler نیستند.
 
 ## مجوز
 
-Apache License 2.0. فایل‌های [LICENSE](LICENSE)، [NOTICE](NOTICE) و
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) را ببین.
+Apache License 2.0.
 
 </div>

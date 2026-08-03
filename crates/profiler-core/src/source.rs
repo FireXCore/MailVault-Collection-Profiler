@@ -59,6 +59,8 @@ pub struct PreflightReport {
     pub database_path: String,
     pub database_bytes: u64,
     pub archive_identity: Option<String>,
+    #[serde(default)]
+    pub archive_identity_aliases: Vec<String>,
     pub schema_version: Option<u32>,
     pub journal_mode: Option<String>,
     pub lock_state: LockState,

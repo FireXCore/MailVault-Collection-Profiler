@@ -39,6 +39,7 @@ export interface PreflightReport {
   databasePath: string;
   databaseBytes: number;
   archiveIdentity: string | null;
+  archiveIdentityAliases: string[];
   schemaVersion: number | null;
   journalMode: string | null;
   lockState: LockState;
@@ -153,6 +154,12 @@ export interface SnapshotResult {
   manifest: SnapshotManifest;
 }
 
+export interface FormatIdentificationResult {
+  formatRunId: string;
+  baselineRunId: string;
+  configurationFingerprint: string;
+  summary: FormatSummary;
+}
 export interface ProfileResult {
   runId: string;
   collectionId: string;
@@ -162,6 +169,13 @@ export interface ProfileResult {
   snapshot: SnapshotResult;
   inventory: InventoryResult;
   fileStat: FileStatResult;
+  runKind: string;
+  generation: number;
+  resumed: boolean;
+  resumeCount: number;
+  sourceRevisionFingerprint: string;
+  format: FormatIdentificationResult | null;
+  snapshotsDeleted: number;
 }
 
 export interface InventoryFilters {

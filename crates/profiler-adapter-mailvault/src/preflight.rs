@@ -26,12 +26,15 @@ pub(crate) fn run_preflight(archive_root: &Path) -> ProfilerResult<PreflightRepo
     if !layout.database.is_file() {
         return Ok(finalize_report(
             &layout,
-            None,
-            None,
-            None,
-            LockState::Indeterminate,
-            ArchiveMetrics::default(),
-            checks,
+            FinalizeReportInput {
+                archive_identity: None,
+                archive_identity_aliases: Vec::new(),
+                schema_version: None,
+                journal_mode: None,
+                lock_state: LockState::Indeterminate,
+                metrics: ArchiveMetrics::default(),
+                checks,
+            },
         ));
     }
 
@@ -48,7 +51,8 @@ pub(crate) fn run_preflight(archive_root: &Path) -> ProfilerResult<PreflightRepo
     let connection = open_read_only(&layout.database)?;
     let schema_version = read_schema_version(&connection, &mut checks);
     check_schema_contract(&connection, &mut checks)?;
-    let archive_identity = read_archive_identity(&connection, &mut checks);
+    let (archive_identity, archive_identity_aliases) =
+        read_archive_identity(&connection, &mut checks);
     check_recommended_indexes(&connection, &mut checks)?;
     let journal_mode = read_journal_mode(&connection, &mut checks);
     check_quick_integrity(&connection, &mut checks)?;
@@ -57,12 +61,15 @@ pub(crate) fn run_preflight(archive_root: &Path) -> ProfilerResult<PreflightRepo
 
     let mut report = finalize_report(
         &layout,
-        archive_identity,
-        schema_version,
-        journal_mode,
-        lock_state,
-        metrics,
-        checks,
+        FinalizeReportInput {
+            archive_identity,
+            archive_identity_aliases,
+            schema_version,
+            journal_mode,
+            lock_state,
+            metrics,
+            checks,
+        },
     );
     report.database_bytes = database_bytes;
     Ok(report)
@@ -123,52 +130,105 @@ pub(crate) fn read_schema_version_value(connection: &Connection) -> ProfilerResu
 }
 
 pub(crate) fn read_archive_identity_value(connection: &Connection) -> ProfilerResult<String> {
-    let mut statement = connection
-        .prepare("SELECT archive_id FROM accounts ORDER BY archive_id")
-        .map_err(|source| sqlite_error("preparing MailVault archive identity", source))?;
-    let archive_ids = statement
-        .query_map([], |row| row.get::<_, String>(0))
-        .map_err(|source| sqlite_error("querying MailVault archive identity", source))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|source| sqlite_error("collecting MailVault archive identity", source))?;
-    if archive_ids.is_empty() {
-        return Err(ProfilerError::IncompatibleSource(
-            "MailVault archive contains no account identities".into(),
+    if let Some(archive_uuid) = connection
+        .query_row(
+            "SELECT value FROM schema_meta WHERE key='archive_uuid'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|source| sqlite_error("reading MailVault archive UUID", source))?
+        .filter(|value| !value.trim().is_empty())
+    {
+        return Ok(identity_digest(
+            "mailvault-profiler-archive-uuid-v1",
+            &[archive_uuid],
         ));
     }
+    let anchor = connection
+        .query_row(
+            "SELECT archive_id FROM accounts ORDER BY id LIMIT 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|source| sqlite_error("reading MailVault archive identity anchor", source))?
+        .ok_or_else(|| {
+            ProfilerError::IncompatibleSource(
+                "MailVault archive contains no account identities".into(),
+            )
+        })?;
+    Ok(identity_digest(
+        "mailvault-profiler-collection-v2",
+        &[anchor],
+    ))
+}
 
+pub(crate) fn read_archive_identity_aliases(
+    connection: &Connection,
+) -> ProfilerResult<Vec<String>> {
+    let mut statement = connection
+        .prepare("SELECT archive_id FROM accounts ORDER BY archive_id")
+        .map_err(|source| sqlite_error("preparing MailVault identity aliases", source))?;
+    let archive_ids = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|source| sqlite_error("querying MailVault identity aliases", source))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source| sqlite_error("collecting MailVault identity aliases", source))?;
+    if archive_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut aliases = archive_ids
+        .iter()
+        .cloned()
+        .map(|value| identity_digest("mailvault-profiler-account-v1", &[value]))
+        .collect::<Vec<_>>();
+    aliases.push(identity_digest(
+        "mailvault-profiler-collection-v1",
+        &archive_ids,
+    ));
+    aliases.sort();
+    aliases.dedup();
+    Ok(aliases)
+}
+
+fn identity_digest(domain: &str, values: &[String]) -> String {
     let mut digest = Sha256::new();
-    digest.update(b"mailvault-profiler-collection-v1\0");
-    for archive_id in archive_ids {
-        let bytes = archive_id.as_bytes();
+    digest.update(domain.as_bytes());
+    digest.update(b"\0");
+    for value in values {
+        let bytes = value.as_bytes();
         digest.update((bytes.len() as u64).to_be_bytes());
         digest.update(bytes);
     }
-    Ok(hex::encode(digest.finalize()))
+    hex::encode(digest.finalize())
 }
 
 fn read_archive_identity(
     connection: &Connection,
     checks: &mut Vec<PreflightCheck>,
-) -> Option<String> {
-    match read_archive_identity_value(connection) {
-        Ok(identity) => {
+) -> (Option<String>, Vec<String>) {
+    match (
+        read_archive_identity_value(connection),
+        read_archive_identity_aliases(connection),
+    ) {
+        (Ok(identity), Ok(aliases)) => {
             checks.push(passed(
                 "archive_identity",
                 "Stable archive identity",
                 CheckLevel::Required,
                 format!("{}…", &identity[..12]),
             ));
-            Some(identity)
+            (Some(identity), aliases)
         }
-        Err(error) => {
+        (Err(error), _) | (_, Err(error)) => {
             checks.push(failed(
                 "archive_identity",
                 "Stable archive identity",
                 CheckLevel::Required,
                 error.to_string(),
             ));
-            None
+            (None, Vec::new())
         }
     }
 }
@@ -430,20 +490,24 @@ fn check_required_path(
     });
 }
 
-fn finalize_report(
-    layout: &MailVaultLayout,
+struct FinalizeReportInput {
     archive_identity: Option<String>,
+    archive_identity_aliases: Vec<String>,
     schema_version: Option<u32>,
     journal_mode: Option<String>,
     lock_state: LockState,
     metrics: ArchiveMetrics,
     checks: Vec<PreflightCheck>,
-) -> PreflightReport {
-    let errors_count = checks
+}
+
+fn finalize_report(layout: &MailVaultLayout, input: FinalizeReportInput) -> PreflightReport {
+    let errors_count = input
+        .checks
         .iter()
         .filter(|check| check.status == CheckStatus::Failed)
         .count() as u64;
-    let warnings_count = checks
+    let warnings_count = input
+        .checks
         .iter()
         .filter(|check| check.status == CheckStatus::Warning)
         .count() as u64;
@@ -453,12 +517,13 @@ fn finalize_report(
         archive_root: layout.root.to_string_lossy().into_owned(),
         database_path: layout.database.to_string_lossy().into_owned(),
         database_bytes: 0,
-        archive_identity,
-        schema_version,
-        journal_mode,
-        lock_state,
-        metrics,
-        checks,
+        archive_identity: input.archive_identity,
+        archive_identity_aliases: input.archive_identity_aliases,
+        schema_version: input.schema_version,
+        journal_mode: input.journal_mode,
+        lock_state: input.lock_state,
+        metrics: input.metrics,
+        checks: input.checks,
         warnings_count,
         errors_count,
         inspected_at: OffsetDateTime::now_utc(),

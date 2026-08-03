@@ -11,7 +11,8 @@ use profiler_core::{
     SnapshotRequest, SnapshotResult, WorkspaceInspection, WorkspaceOpenMode,
 };
 use profiler_engine::{
-    ExactFormatEngine, ProfileEngine, ProfileOptions, ProfileRequest, ProfileResult,
+    ExactFormatEngine, ProfileResult,
+    continuous::{ContinuousProfileEngine, ContinuousProfileOptions, ContinuousProfileRequest},
     workspace::{
         WorkspaceContext, WorkspaceSession, add_review_note, clear_review_status,
         export_sanitized_run, finding_detail, findings_page as query_findings_page,
@@ -275,15 +276,20 @@ async fn profile_collection(
     root: String,
     workspace: String,
     on_event: Channel<ProgressEvent>,
+    app: AppHandle,
     state: State<'_, DesktopState>,
 ) -> Result<ProfileResult, ErrorReport> {
     let workspace_path = PathBuf::from(&workspace);
+    let (siegfried_path, signature_path) =
+        bundled_siegfried_paths(&app).map_err(|error| error.report())?;
     let result = tauri::async_runtime::spawn_blocking(move || {
-        ProfileEngine.profile(
-            &ProfileRequest {
+        ContinuousProfileEngine.profile(
+            &ContinuousProfileRequest {
                 archive_root: PathBuf::from(root),
                 workspace_root: PathBuf::from(workspace),
-                options: ProfileOptions::default(),
+                siegfried_path,
+                signature_path,
+                options: ContinuousProfileOptions::default(),
             },
             &ChannelProgressSink { channel: on_event },
         )

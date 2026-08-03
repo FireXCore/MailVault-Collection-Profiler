@@ -36,7 +36,7 @@ apps/desktop/src-tauri/tauri.conf.json bundle.windows.wix.version
 ```
 
 The public version may contain a prerelease suffix. MSI uses a separate numeric four-part version.
-For `0.1.0-alpha.4`, the MSI version is `0.1.0.4`.
+For `0.1.0-alpha.6`, the MSI version is `0.1.0.6`.
 
 ## 2. Write release notes and changelog
 
@@ -67,7 +67,7 @@ Open an x64 Visual Studio Developer Command Prompt:
 call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=amd64 -host_arch=amd64
 cd /d D:\mailvault-collection-profiler
 npm ci
-node scripts\check-tag-version.cjs v0.1.0-alpha.4
+node scripts\check-tag-version.cjs v0.1.0-alpha.6
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\quality.ps1
 npm run tauri:desktop:bundle
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\generate-release-checksums.ps1
@@ -101,10 +101,10 @@ Repeat the install/uninstall check with the MSI package.
 
 ```cmd
 git add .
-git commit -m "Release MailVault Collection Profiler 0.1.0-alpha.4"
+git commit -m "Release MailVault Collection Profiler 0.1.0-alpha.6"
 git push origin main
-git tag -a v0.1.0-alpha.4 -m "MailVault Collection Profiler 0.1.0-alpha.4"
-git push origin v0.1.0-alpha.4
+git tag -a v0.1.0-alpha.6 -m "MailVault Collection Profiler 0.1.0-alpha.6"
+git push origin v0.1.0-alpha.6
 ```
 
 The tag starts `.github/workflows/release.yml`.

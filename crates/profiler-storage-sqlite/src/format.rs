@@ -61,7 +61,10 @@ impl ProfilerStore {
                          ORDER BY variant.occurrence_count DESC, variant.normalized_filename
                          LIMIT 1)
                  FROM content_objects AS content
-                 WHERE content.collection_id=:collection_id
+                 WHERE content.collection_id=:collection_id AND content.active=1
+                   AND (content.last_format_success_fingerprint IS NULL
+                        OR content.last_format_success_fingerprint<>content.format_input_fingerprint
+                        OR content.format_state IN ('uninspected','skipped_unavailable','tool_error'))
                    AND (:after_sha256 IS NULL OR content.sha256 > :after_sha256)
                  ORDER BY content.sha256
                  LIMIT :limit",
@@ -159,6 +162,22 @@ impl ProfilerStore {
                 ]),
             ));
         }
+        transaction.execute(
+                "UPDATE content_objects SET
+                    last_format_success_fingerprint=format_input_fingerprint,
+                    format_retry_count=0
+                 WHERE id IN (SELECT content_object_id FROM format_observations
+                    WHERE format_run_id=?1 AND state IN ('identified','unknown','ambiguous','empty'))",
+                [format_run_id],
+            ).map_err(|source| sqlite_error("publishing exact-format cache", source))?;
+        transaction
+            .execute(
+                "UPDATE content_objects SET format_retry_count=format_retry_count+1
+                 WHERE id IN (SELECT content_object_id FROM format_observations
+                    WHERE format_run_id=?1 AND state IN ('skipped_unavailable','tool_error'))",
+                [format_run_id],
+            )
+            .map_err(|source| sqlite_error("recording exact-format retries", source))?;
         transaction
             .execute(
                 "UPDATE format_identification_runs
@@ -249,7 +268,6 @@ impl ProfilerStore {
             .query_row(
                 format_count_sql(),
                 named_params! {
-                    ":baseline_run_id": request.baseline_run_id.as_str(),
                     ":collection_id": collection_id.as_str(),
                     ":search_like": search_like,
                     ":state": state,
@@ -267,7 +285,6 @@ impl ProfilerStore {
         let mut items = statement
             .query_map(
                 named_params! {
-                    ":baseline_run_id": request.baseline_run_id.as_str(),
                     ":collection_id": collection_id.as_str(),
                     ":search_like": search_like,
                     ":state": state,
@@ -377,6 +394,9 @@ impl ResumableFormatRun {
 struct PersistedFormatSummary {
     format_run_id: String,
     state: String,
+    total_objects: i64,
+    eligible_objects: i64,
+    total_bytes: i64,
     completed_objects: i64,
     completed_bytes: i64,
     identified: i64,
@@ -405,33 +425,39 @@ impl PersistedFormatSummary {
         Ok(Self {
             format_run_id: row.get(0)?,
             state: row.get(1)?,
-            completed_objects: row.get(2)?,
-            completed_bytes: row.get(3)?,
-            identified: row.get(4)?,
-            unknown: row.get(5)?,
-            ambiguous: row.get(6)?,
-            empty: row.get(7)?,
-            skipped_unavailable: row.get(8)?,
-            tool_errors: row.get(9)?,
-            extension_mismatches: row.get(10)?,
-            started_at: row.get(11)?,
-            finished_at: row.get(12)?,
-            tool_name: row.get(13)?,
-            tool_version: row.get(14)?,
-            executable_path: row.get(15)?,
-            executable_sha256: row.get(16)?,
-            signature_path: row.get(17)?,
-            signature_sha256: row.get(18)?,
-            signature_version: row.get(19)?,
-            signature_created: row.get(20)?,
-            identifiers_json: row.get(21)?,
-            probed_at: row.get(22)?,
+            total_objects: row.get(2)?,
+            eligible_objects: row.get(3)?,
+            total_bytes: row.get(4)?,
+            completed_objects: row.get(5)?,
+            completed_bytes: row.get(6)?,
+            identified: row.get(7)?,
+            unknown: row.get(8)?,
+            ambiguous: row.get(9)?,
+            empty: row.get(10)?,
+            skipped_unavailable: row.get(11)?,
+            tool_errors: row.get(12)?,
+            extension_mismatches: row.get(13)?,
+            started_at: row.get(14)?,
+            finished_at: row.get(15)?,
+            tool_name: row.get(16)?,
+            tool_version: row.get(17)?,
+            executable_path: row.get(18)?,
+            executable_sha256: row.get(19)?,
+            signature_path: row.get(20)?,
+            signature_sha256: row.get(21)?,
+            signature_version: row.get(22)?,
+            signature_created: row.get(23)?,
+            identifiers_json: row.get(24)?,
+            probed_at: row.get(25)?,
         })
     }
 
     fn apply_to(self, summary: &mut FormatSummary) -> ProfilerResult<()> {
         summary.latest_format_run_id = Some(self.format_run_id);
         summary.latest_run_state = Some(self.state);
+        summary.total_objects = to_u64(self.total_objects, "format total objects")?;
+        summary.eligible_objects = to_u64(self.eligible_objects, "format eligible objects")?;
+        summary.total_bytes = to_u64(self.total_bytes, "format total bytes")?;
         summary.completed_objects = to_u64(self.completed_objects, "format completed objects")?;
         summary.completed_bytes = to_u64(self.completed_bytes, "format completed bytes")?;
         summary.identified = to_u64(self.identified, "identified formats")?;
@@ -481,10 +507,10 @@ fn load_format_baseline(
         .ok_or_else(|| {
             ProfilerError::contract(ErrorCode::RunNotFound, "baseline run was not found", false)
         })?;
-    if state != "succeeded" {
+    if state != "succeeded" && state != "running" {
         return Err(ProfilerError::contract(
             ErrorCode::RunNotBrowsable,
-            "exact format identification requires a completed physical profile",
+            "exact format identification requires an active or completed physical profile",
             false,
         ));
     }
@@ -583,7 +609,11 @@ fn load_format_workload(
                     COALESCE(SUM(CASE WHEN availability_state='available'
                                       AND expected_size_bytes>0
                                       THEN expected_size_bytes ELSE 0 END), 0)
-             FROM content_objects WHERE collection_id=?1",
+             FROM content_objects WHERE collection_id=?1 AND active=1
+               AND format_input_fingerprint IS NOT NULL
+               AND (last_format_success_fingerprint IS NULL
+                    OR last_format_success_fingerprint<>format_input_fingerprint
+                    OR format_state IN ('uninspected','skipped_unavailable','tool_error'))",
             [collection_id],
             |row| {
                 Ok(FormatWorkload {
@@ -823,10 +853,10 @@ fn load_latest_format_run(
 ) -> ProfilerResult<Option<PersistedFormatSummary>> {
     connection
         .query_row(
-            "SELECT run.id, run.state, run.completed_objects, run.completed_bytes,
-                    run.identified, run.unknown, run.ambiguous, run.empty_objects,
-                    run.skipped_unavailable, run.tool_errors, run.extension_mismatches,
-                    run.started_at, run.finished_at,
+            "SELECT run.id, run.state, run.total_objects, run.eligible_objects, run.total_bytes,
+                    run.completed_objects, run.completed_bytes, run.identified, run.unknown,
+                    run.ambiguous, run.empty_objects, run.skipped_unavailable, run.tool_errors,
+                    run.extension_mismatches, run.started_at, run.finished_at,
                     tool.tool_name, tool.tool_version, tool.executable_path,
                     tool.executable_sha256, tool.signature_path, tool.signature_sha256,
                     tool.signature_version, tool.signature_created, tool.identifiers_json,
@@ -1077,58 +1107,40 @@ fn format_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FormatObjectRow> {
 }
 
 fn format_count_sql() -> &'static str {
-    "WITH latest_run AS (
-         SELECT id FROM format_identification_runs
-         WHERE baseline_run_id=:baseline_run_id
-         ORDER BY started_at DESC LIMIT 1
-     )
-     SELECT COUNT(*) FROM content_objects AS content
-     LEFT JOIN format_observations AS observation
-       ON observation.content_object_id=content.id
-      AND observation.format_run_id=(SELECT id FROM latest_run)
-     WHERE content.collection_id=:collection_id
-       AND (:state IS NULL OR COALESCE(observation.state, 'uninspected')=:state)
-       AND (:puid IS NULL OR observation.primary_identifier=:puid)
-       AND (:mismatch_only=0 OR COALESCE(observation.extension_mismatch, 0)=1)
+    "SELECT COUNT(*) FROM content_objects AS content
+     WHERE content.collection_id=:collection_id AND content.active=1
+       AND (:state IS NULL OR content.format_state=:state)
+       AND (:puid IS NULL OR content.primary_puid=:puid)
+       AND (:mismatch_only=0 OR content.extension_mismatch=1)
        AND (:search_like IS NULL OR lower(content.sha256) LIKE :search_like
             OR lower(content.source_detected_mime_type) LIKE :search_like
-            OR lower(COALESCE(observation.primary_identifier, '')) LIKE :search_like
-            OR lower(COALESCE(observation.primary_format_name, '')) LIKE :search_like
+            OR lower(COALESCE(content.primary_puid, '')) LIKE :search_like
+            OR lower(COALESCE(content.primary_format_name, '')) LIKE :search_like
             OR EXISTS(SELECT 1 FROM filename_variants AS variant
                       WHERE variant.content_object_id=content.id
                         AND lower(variant.display_filename) LIKE :search_like))"
 }
 
 fn format_page_sql() -> &'static str {
-    "WITH latest_run AS (
-         SELECT id FROM format_identification_runs
-         WHERE baseline_run_id=:baseline_run_id
-         ORDER BY started_at DESC LIMIT 1
-     )
-     SELECT content.id, content.sha256,
+    "SELECT content.id, content.sha256,
             COALESCE((SELECT variant.display_filename FROM filename_variants AS variant
                       WHERE variant.content_object_id=content.id
                       ORDER BY variant.occurrence_count DESC, variant.normalized_filename LIMIT 1),
                      '[unnamed]'),
             content.expected_size_bytes, content.source_detected_mime_type,
-            COALESCE(observation.state, 'uninspected'), observation.primary_identifier,
-            observation.primary_format_name, observation.primary_format_version,
-            observation.primary_mime_type, COALESCE(observation.match_count, 0),
-            COALESCE(observation.extension_checked, 0),
-            COALESCE(observation.extension_mismatch, 0)
+            content.format_state, content.primary_puid, content.primary_format_name,
+            content.primary_format_version, content.primary_format_mime_type,
+            content.format_match_count, content.extension_checked, content.extension_mismatch
      FROM content_objects AS content
-     LEFT JOIN format_observations AS observation
-       ON observation.content_object_id=content.id
-      AND observation.format_run_id=(SELECT id FROM latest_run)
-     WHERE content.collection_id=:collection_id
+     WHERE content.collection_id=:collection_id AND content.active=1
        AND (:after_sha256 IS NULL OR content.sha256>:after_sha256)
-       AND (:state IS NULL OR COALESCE(observation.state, 'uninspected')=:state)
-       AND (:puid IS NULL OR observation.primary_identifier=:puid)
-       AND (:mismatch_only=0 OR COALESCE(observation.extension_mismatch, 0)=1)
+       AND (:state IS NULL OR content.format_state=:state)
+       AND (:puid IS NULL OR content.primary_puid=:puid)
+       AND (:mismatch_only=0 OR content.extension_mismatch=1)
        AND (:search_like IS NULL OR lower(content.sha256) LIKE :search_like
             OR lower(content.source_detected_mime_type) LIKE :search_like
-            OR lower(COALESCE(observation.primary_identifier, '')) LIKE :search_like
-            OR lower(COALESCE(observation.primary_format_name, '')) LIKE :search_like
+            OR lower(COALESCE(content.primary_puid, '')) LIKE :search_like
+            OR lower(COALESCE(content.primary_format_name, '')) LIKE :search_like
             OR EXISTS(SELECT 1 FROM filename_variants AS variant
                       WHERE variant.content_object_id=content.id
                         AND lower(variant.display_filename) LIKE :search_like))

@@ -16,9 +16,9 @@
 
 </div>
 
-> **Development pre-release:** `0.1.0-alpha.4` adds exact format identification as a versioned,
-> resumable profiler stage. Windows release builds bundle a pinned Siegfried `1.11.6` sidecar and
-> PRONOM `v124` signature database. The source archive remains read-only. Installers are unsigned.
+> **Final feature pre-release:** `0.1.0-alpha.6` combines continuous incremental profiling,
+> same-run crash recovery and automatic exact-format identification. Windows builds bundle pinned
+> Siegfried `1.11.6` and PRONOM `v124`. MailVault remains read-only and installers are unsigned.
 
 ## What the product does
 
@@ -28,11 +28,11 @@ index over that evidence:
 ```text
 MailVault archive (read-only)
   → consistent SQLite snapshot
-  → physical content inventory
-  → exact SHA-256 identity and occurrence history
-  → bounded file-stat verification
-  → exact format identification with PUID evidence
-  → searchable desktop and CLI views
+  → full metadata reconciliation from an immutable snapshot
+  → cumulative SHA-256 identity and occurrence history
+  → selective file-stat verification and retry
+  → automatic exact-format identification with PUID evidence
+  → durable incremental generations and searchable desktop/CLI views
 ```
 
 The profiler does not download mail, mutate MailVault, execute attachments, perform OCR, expand
@@ -55,10 +55,10 @@ sample-only data:
 | Physical inventory findings | 1,484 |
 | Physical inventory warnings / errors | 2 / 0 |
 
-Alpha 3 validated the physical inventory on Windows. Alpha 4 preserves that baseline, adds schema
-migration `0006`, and completed a private full-scale exact-format run: 13,684/13,684 objects,
-13,636 identified, 46 unknown, 0 ambiguous and 0 tool errors. The canonical MailVault database
-SHA-256 remained unchanged.
+Alpha 4 completed the Windows quality gate and exact-format run on all 13,684 real objects. Alpha 6
+adds schema migration `0007`, continuous generations, update-aware metadata reconciliation, selective
+content reuse, same-run recovery and bounded snapshot retention. Publication still requires the Alpha 6
+real-runtime acceptance matrix to pass on Windows.
 
 ## Implemented capabilities
 
@@ -73,7 +73,7 @@ SHA-256 remained unchanged.
 - Cursor-paginated inventory, content-object detail and append-only finding review.
 - Sanitized summary and finding export without local paths, filenames, addresses or review notes.
 
-### Exact format identification — Alpha 4
+### Exact format identification
 
 - One identification job per unique content object, never per duplicate occurrence.
 - Pinned Siegfried `1.11.6` executable and PRONOM `v124` signature database.
@@ -115,23 +115,47 @@ See [Exact format identification](docs/FORMAT_IDENTIFICATION.md),
 
 ```text
 E:\MailVault-E
-E:\MailVault-Profiler-Alpha4
-E:\MailVault-Profiler-Evidence-Alpha4
+E:\MailVault-Profiler-Alpha6
+E:\MailVault-Profiler-Evidence-Alpha6
 ```
 
 Full instructions: [Windows installation](docs/INSTALLATION_WINDOWS.md).
 
 ## CLI workflow
 
+Run the complete initial or incremental pipeline:
+
+```powershell
+.\target\release\mailvault-profiler.exe profile `
+  --archive "E:\MailVault-E" `
+  --workspace "E:\MailVault-Profiler-Alpha6" `
+  --siegfried ".\tools\siegfried\windows-x86_64\sf.exe" `
+  --signature ".\tools\siegfried\windows-x86_64\default.sig" `
+  --retain-successful-snapshots 2
+```
+
+Keep the same workspace current after future MailVault syncs:
+
+```powershell
+.\target\release\mailvault-profiler.exe profile `
+  --archive "E:\MailVault-E" `
+  --workspace "E:\MailVault-Profiler-Alpha6" `
+  --watch `
+  --poll-seconds 300
+```
+
+The standalone `formats` commands remain diagnostic tools. The normal `profile` command now runs exact
+format identification automatically before the generation can succeed.
+
 Create or reopen the physical inventory first:
 
 ```powershell
 .\target\release\mailvault-profiler.exe workspace inspect `
-  --workspace "E:\MailVault-Profiler-Alpha4" `
+  --workspace "E:\MailVault-Profiler-Alpha6" `
   --json
 
 .\target\release\mailvault-profiler.exe runs list `
-  --workspace "E:\MailVault-Profiler-Alpha4" `
+  --workspace "E:\MailVault-Profiler-Alpha6" `
   --json
 ```
 
@@ -148,7 +172,7 @@ Run exact identification against a completed physical baseline:
 
 ```powershell
 .\target\release\mailvault-profiler.exe formats identify `
-  --workspace "E:\MailVault-Profiler-Alpha4" `
+  --workspace "E:\MailVault-Profiler-Alpha6" `
   --run "<physical-profile-run-id>" `
   --siegfried ".\tools\siegfried\windows-x86_64\sf.exe" `
   --signature ".\tools\siegfried\windows-x86_64\default.sig" `
@@ -165,12 +189,12 @@ Inspect aggregate and object-level results:
 
 ```powershell
 .\target\release\mailvault-profiler.exe formats summary `
-  --workspace "E:\MailVault-Profiler-Alpha4" `
+  --workspace "E:\MailVault-Profiler-Alpha6" `
   --run "<physical-profile-run-id>" `
   --json
 
 .\target\release\mailvault-profiler.exe formats list `
-  --workspace "E:\MailVault-Profiler-Alpha4" `
+  --workspace "E:\MailVault-Profiler-Alpha6" `
   --run "<physical-profile-run-id>" `
   --state ambiguous `
   --json
@@ -190,7 +214,7 @@ Requirements:
 ```powershell
 npm ci
 .\scripts\install-siegfried.ps1
-.\scripts\quality.ps1
+.\scripts\quality-alpha6.ps1
 npm run tauri:desktop:bundle
 ```
 
@@ -199,22 +223,24 @@ The installer build embeds the verified sidecar resources. Generated `sf.exe`, `
 
 ## Validation status
 
-The following checks were completed in the supplied build environment:
+The trusted Alpha 4 predecessor passed 36 Rust tests, strict Clippy, TypeScript, Vite, native Tauri and
+the full private exact-format run. Alpha 6 static package gates validate version alignment,
+documentation/privacy, JSON/TOML and SQLite schema migration.
 
-- TypeScript type-check and Vite production build: passed.
-- Tree-sitter parse of all Rust source files: passed.
-- Alpha 3 real profiler database migration from schema 5 to 6: passed.
-- SQLite `quick_check` and `foreign_key_check` after migration: passed.
-- Real baseline counts preserved: 13,684 objects, 22,068 occurrences, 1,484 findings.
-- Source Alpha 3 profiler database SHA-256 unchanged after migration test.
-- Synthetic exact-format projection against the migrated schema: passed.
+Before publishing Alpha 6, run:
 
-A Rust toolchain was not available in the current isolated build environment, so local semantic
-`cargo check`, Clippy, unit tests, Tauri compilation and a real Siegfried run were not claimed.
-GitHub Windows CI and the release workflow are configured to install the pinned sidecar and run the
-full Rust/desktop gates before producing installers.
+```powershell
+.\scripts\quality-alpha6.ps1 -BuildInstallers
+.\scripts\validate-alpha6-real.ps1 ...
+.\scripts\validate-alpha6-delta.ps1 ...
+.\scripts\validate-alpha6-crash.ps1 ...
+.\scripts\validate-alpha6-soak.ps1 -Cycles 100 ...
+.\scripts\validate-alpha6-rebuild-equivalence.ps1 ...
+```
 
-See [Alpha 4 validation evidence](docs/VALIDATION_0.1.0-alpha.4.md).
+See [Alpha 6 validation contract](docs/VALIDATION_0.1.0-alpha.6.md),
+[continuous profiling](docs/CONTINUOUS_PROFILING.md) and
+[real acceptance runbook](docs/ALPHA6_REAL_ACCEPTANCE_FA.md).
 
 ## Documentation
 
@@ -231,7 +257,7 @@ See [Alpha 4 validation evidence](docs/VALIDATION_0.1.0-alpha.4.md).
 - [Privacy](docs/PRIVACY.md)
 - [Real archive baseline](docs/REAL_ARCHIVE_BASELINE.md)
 - [Release process](docs/RELEASE_PROCESS.md)
-- [Alpha 4 release notes](docs/releases/v0.1.0-alpha.4.md)
+- [Alpha 6 release notes](docs/releases/v0.1.0-alpha.6.md)
 
 ## Scope intentionally deferred
 

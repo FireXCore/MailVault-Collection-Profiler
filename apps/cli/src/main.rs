@@ -2,6 +2,8 @@ use std::{
     path::{Path, PathBuf},
     process::ExitCode,
     str::FromStr,
+    thread,
+    time::Duration,
 };
 
 use clap::{Parser, Subcommand};
@@ -13,7 +15,11 @@ use profiler_core::{
     WorkspaceOpenMode,
 };
 use profiler_engine::{
-    ExactFormatEngine, ProfileEngine, ProfileOptions, ProfileRequest,
+    ExactFormatEngine,
+    continuous::{
+        ContinuousProfileEngine, ContinuousProfileOptions, ContinuousProfileRequest,
+        profile_needed, source_revision_fingerprint,
+    },
     workspace::{
         WorkspaceSession, add_review_note, clear_review_status, export_sanitized_run,
         finding_detail, findings_page, list_runs, set_review_status,
@@ -56,6 +62,26 @@ enum Command {
         file_stat_workers: u32,
         #[arg(long, default_value_t = 512)]
         file_stat_batch_size: u32,
+        #[arg(long)]
+        siegfried: Option<PathBuf>,
+        #[arg(long)]
+        signature: Option<PathBuf>,
+        #[arg(long, default_value_t = 2_048)]
+        format_batch_size: u32,
+        #[arg(long, default_value_t = 0)]
+        format_workers: u32,
+        #[arg(long, default_value_t = 900)]
+        format_timeout_seconds: u64,
+        #[arg(long)]
+        skip_format: bool,
+        #[arg(long)]
+        rebuild: bool,
+        #[arg(long)]
+        watch: bool,
+        #[arg(long, default_value_t = 300)]
+        poll_seconds: u64,
+        #[arg(long, default_value_t = 2)]
+        retain_successful_snapshots: u32,
     },
     Workspace {
         #[command(subcommand)]
@@ -231,31 +257,6 @@ enum FormatsCommand {
     },
 }
 
-#[derive(Debug)]
-struct IdentifyFormatsArgs {
-    workspace: PathBuf,
-    run: String,
-    siegfried: Option<PathBuf>,
-    signature: Option<PathBuf>,
-    batch_size: u32,
-    workers: u32,
-    timeout_seconds: u64,
-    resume: bool,
-    allow_migration: bool,
-}
-
-#[derive(Debug)]
-struct ListFormatsArgs {
-    workspace: PathBuf,
-    run: String,
-    state: Option<String>,
-    puid: Option<String>,
-    mismatch_only: bool,
-    search: Option<String>,
-    limit: u32,
-    json: bool,
-}
-
 #[derive(Debug, Subcommand)]
 enum ExportCommand {
     SanitizedSummary {
@@ -318,13 +319,33 @@ fn run(arguments: Arguments) -> ProfilerResult<()> {
             batch_size,
             file_stat_workers,
             file_stat_batch_size,
-        } => run_profile(
+            siegfried,
+            signature,
+            format_batch_size,
+            format_workers,
+            format_timeout_seconds,
+            skip_format,
+            rebuild,
+            watch,
+            poll_seconds,
+            retain_successful_snapshots,
+        } => run_profile(&ProfileCommandOptions {
             archive,
             workspace,
             batch_size,
             file_stat_workers,
             file_stat_batch_size,
-        ),
+            siegfried,
+            signature,
+            format_batch_size,
+            format_workers,
+            format_timeout_seconds,
+            skip_format,
+            rebuild,
+            watch,
+            poll_seconds,
+            retain_successful_snapshots,
+        }),
         Command::Workspace { command } => run_workspace_command(command),
         Command::Runs { command } => run_runs_command(command),
         Command::Findings { command } => run_findings_command(command),
@@ -377,25 +398,82 @@ fn run_snapshot(
     print_json(&MailVaultAdapter.create_snapshot(&request, &JsonLineProgress)?)
 }
 
-fn run_profile(
+#[derive(Debug)]
+struct ProfileCommandOptions {
     archive: PathBuf,
     workspace: PathBuf,
     batch_size: u32,
     file_stat_workers: u32,
     file_stat_batch_size: u32,
-) -> ProfilerResult<()> {
-    let mut options = ProfileOptions::default();
-    options.inventory.batch_size = batch_size;
-    options.file_stat.workers = file_stat_workers;
-    options.file_stat.batch_size = file_stat_batch_size;
-    print_json(&ProfileEngine.profile(
-        &ProfileRequest {
-            archive_root: archive,
-            workspace_root: workspace,
-            options,
-        },
-        &JsonLineProgress,
-    )?)
+    siegfried: Option<PathBuf>,
+    signature: Option<PathBuf>,
+    format_batch_size: u32,
+    format_workers: u32,
+    format_timeout_seconds: u64,
+    skip_format: bool,
+    rebuild: bool,
+    watch: bool,
+    poll_seconds: u64,
+    retain_successful_snapshots: u32,
+}
+
+fn run_profile(command: &ProfileCommandOptions) -> ProfilerResult<()> {
+    if command.poll_seconds < 5 {
+        return Err(profiler_core::ProfilerError::InvalidArgument(
+            "poll-seconds must be at least 5".into(),
+        ));
+    }
+
+    let mut options = continuous_profile_options(command);
+    loop {
+        let preflight = MailVaultAdapter.preflight(&command.archive)?;
+        let revision = source_revision_fingerprint(&preflight)?;
+        let should_profile = !command.watch || profile_needed(&command.workspace, &revision)?;
+        if should_profile {
+            let execution = ContinuousProfileEngine.profile(
+                &ContinuousProfileRequest {
+                    archive_root: command.archive.clone(),
+                    workspace_root: command.workspace.clone(),
+                    siegfried_path: command.siegfried.clone(),
+                    signature_path: command.signature.clone(),
+                    options: options.clone(),
+                },
+                &JsonLineProgress,
+            );
+            match execution {
+                Ok(result) => {
+                    print_json(&result)?;
+                    options.rebuild = false;
+                }
+                Err(error) if command.watch && error.report().retryable => {
+                    eprintln!(
+                        "{}",
+                        serde_json::to_string(&error.report())
+                            .unwrap_or_else(|_| error.to_string())
+                    );
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        if !command.watch {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_secs(command.poll_seconds));
+    }
+}
+
+fn continuous_profile_options(command: &ProfileCommandOptions) -> ContinuousProfileOptions {
+    let mut options = ContinuousProfileOptions::default();
+    options.profile.inventory.batch_size = command.batch_size;
+    options.profile.file_stat.workers = command.file_stat_workers;
+    options.profile.file_stat.batch_size = command.file_stat_batch_size;
+    options.format.batch_size = command.format_batch_size;
+    options.format.workers = command.format_workers;
+    options.format.timeout_seconds = command.format_timeout_seconds;
+    options.format_required = !command.skip_format;
+    options.rebuild = command.rebuild;
+    options.retain_successful_snapshots = command.retain_successful_snapshots;
+    options
 }
 
 fn run_workspace_command(command: WorkspaceCommand) -> ProfilerResult<()> {
@@ -617,7 +695,7 @@ fn run_formats_command(command: FormatsCommand) -> ProfilerResult<()> {
             signature,
             workers,
             json,
-        } => run_format_probe(siegfried, signature, workers, json),
+        } => run_formats_probe(siegfried, signature, workers, json),
         FormatsCommand::Identify {
             workspace,
             run,
@@ -628,22 +706,24 @@ fn run_formats_command(command: FormatsCommand) -> ProfilerResult<()> {
             timeout_seconds,
             resume,
             allow_migration,
-        } => run_format_identification(IdentifyFormatsArgs {
-            workspace,
+        } => run_formats_identify(
+            &workspace,
             run,
             siegfried,
             signature,
-            batch_size,
-            workers,
-            timeout_seconds,
-            resume,
+            FormatOptions {
+                batch_size,
+                workers,
+                timeout_seconds,
+                resume,
+            },
             allow_migration,
-        }),
+        ),
         FormatsCommand::Summary {
             workspace,
             run,
             json,
-        } => run_format_summary(&workspace, &run, json),
+        } => run_formats_summary(&workspace, &run, json),
         FormatsCommand::List {
             workspace,
             run,
@@ -653,20 +733,22 @@ fn run_formats_command(command: FormatsCommand) -> ProfilerResult<()> {
             search,
             limit,
             json,
-        } => run_format_list(ListFormatsArgs {
-            workspace,
-            run,
-            state,
-            puid,
-            mismatch_only,
-            search,
-            limit,
-            json,
-        }),
+        } => run_formats_list(
+            &workspace,
+            FormatListCommandOptions {
+                run,
+                state,
+                puid,
+                mismatch_only,
+                search,
+                limit,
+                json,
+            },
+        ),
     }
 }
 
-fn run_format_probe(
+fn run_formats_probe(
     siegfried: Option<PathBuf>,
     signature: Option<PathBuf>,
     workers: u32,
@@ -684,34 +766,34 @@ fn run_format_probe(
     }
 }
 
-fn run_format_identification(args: IdentifyFormatsArgs) -> ProfilerResult<()> {
-    let session = open_review_workspace(&args.workspace, args.allow_migration)?;
+fn run_formats_identify(
+    workspace: &Path,
+    run: String,
+    siegfried: Option<PathBuf>,
+    signature: Option<PathBuf>,
+    options: FormatOptions,
+    allow_migration: bool,
+) -> ProfilerResult<()> {
+    let session = open_review_workspace(workspace, allow_migration)?;
     let context = session.context();
     let archive_root = single_source_root(&context.source_roots)?;
-
     print_json(&ExactFormatEngine.identify(
         &FormatIdentificationRequest {
-            baseline_run_id: args.run,
+            baseline_run_id: run,
             workspace_root: context.root_path,
             profiler_database: context.profiler_database,
             archive_root,
-            siegfried_path: args.siegfried,
-            signature_path: args.signature,
-            options: FormatOptions {
-                batch_size: args.batch_size,
-                workers: args.workers,
-                timeout_seconds: args.timeout_seconds,
-                resume: args.resume,
-            },
+            siegfried_path: siegfried,
+            signature_path: signature,
+            options,
         },
         &JsonLineProgress,
     )?)
 }
 
-fn run_format_summary(workspace: &Path, run: &str, json: bool) -> ProfilerResult<()> {
+fn run_formats_summary(workspace: &Path, run: &str, json: bool) -> ProfilerResult<()> {
     let session = open_read_only_workspace(workspace)?;
     let summary = ExactFormatEngine.summary(&session.context().profiler_database, run)?;
-
     if json {
         print_json(&summary)
     } else {
@@ -733,32 +815,46 @@ fn run_format_summary(workspace: &Path, run: &str, json: bool) -> ProfilerResult
     }
 }
 
-fn run_format_list(args: ListFormatsArgs) -> ProfilerResult<()> {
-    let session = open_read_only_workspace(&args.workspace)?;
+#[derive(Debug)]
+struct FormatListCommandOptions {
+    run: String,
+    state: Option<String>,
+    puid: Option<String>,
+    mismatch_only: bool,
+    search: Option<String>,
+    limit: u32,
+    json: bool,
+}
+
+fn run_formats_list(workspace: &Path, command: FormatListCommandOptions) -> ProfilerResult<()> {
+    let session = open_read_only_workspace(workspace)?;
     let page = ExactFormatEngine.page(
         &session.context().profiler_database,
         &FormatPageRequest {
-            baseline_run_id: args.run,
+            baseline_run_id: command.run,
             filters: FormatFilters {
-                search: args.search,
-                state: args.state.as_deref().map(parse_format_state).transpose()?,
-                puid: args.puid,
-                mismatch_only: args.mismatch_only,
+                search: command.search,
+                state: command
+                    .state
+                    .as_deref()
+                    .map(parse_format_state)
+                    .transpose()?,
+                puid: command.puid,
+                mismatch_only: command.mismatch_only,
             },
             after_sha256: None,
-            limit: args.limit,
+            limit: command.limit,
         },
     )?;
-
-    if args.json {
+    if command.json {
         print_json(&page)
     } else {
         for item in page.items {
             println!(
                 "{}  {}  {}  {}",
                 item.state,
-                item.primary_identifier.as_deref().unwrap_or("—"),
-                item.primary_format_name.as_deref().unwrap_or("—"),
+                item.primary_identifier.as_deref().unwrap_or("Ã¢â‚¬â€"),
+                item.primary_format_name.as_deref().unwrap_or("Ã¢â‚¬â€"),
                 item.sha256
             );
         }

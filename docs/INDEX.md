@@ -34,3 +34,10 @@
 - [Alpha 4 release notes](releases/v0.1.0-alpha.4.md)
 - [GitHub publishing guide — Persian](GITHUB_PUBLISHING_GUIDE_FA.md)
 - [Repository release handoff — Persian](REPOSITORY_RELEASE_HANDOFF_FA.md)
+
+- [Continuous profiling](CONTINUOUS_PROFILING.md)
+- [Alpha 6 validation](VALIDATION_0.1.0-alpha.6.md)
+- [Alpha 6 release notes](releases/v0.1.0-alpha.6.md)
+
+- [Alpha 6 real acceptance (FA)](ALPHA6_REAL_ACCEPTANCE_FA.md)
+- [Alpha 6 package validation](ALPHA6_PACKAGE_VALIDATION.md)

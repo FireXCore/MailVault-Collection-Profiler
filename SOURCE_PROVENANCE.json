@@ -1,0 +1,18 @@
+{
+  "schema": "mailvault.profiler.source-provenance.v1",
+  "version": "0.1.0-alpha.6",
+  "workspace_schema": 7,
+  "canonical_predecessor_archive": "mailvault-collection-profiler(9).zip",
+  "canonical_predecessor_sha256": "afe3f97ac891b602a0d578818167a3112f66dea9ac6c55fceba86aa4d8964296",
+  "predecessor_release": "0.1.0-alpha.4",
+  "feature_scope": [
+    "continuous_full-snapshot metadata reconciliation",
+    "selective content-addressed file-stat reuse and retry",
+    "automatic exact-format identification",
+    "same-run crash resume",
+    "bounded snapshot retention",
+    "real Windows acceptance gates"
+  ],
+  "runtime_status": "awaiting Windows real-archive acceptance",
+  "publication_rule": "do not tag or publish until every required acceptance gate is green"
+}

@@ -51,3 +51,9 @@ desktop.ini
 tools/siegfried/windows-x86_64/sf.exe
 tools/siegfried/windows-x86_64/default.sig
 tools/siegfried/windows-x86_64/tool-manifest.json
+/target-alpha6-cli-crash/
+/target-alpha6-cli-delta/
+
+/target-alpha6-cli-soak/
+
+/target-alpha6-cli-watch-v3/

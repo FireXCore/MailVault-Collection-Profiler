@@ -63,9 +63,13 @@ pub fn validate_transition(from: RunState, to: RunState) -> ProfilerResult<()> {
             RunState::Pausing | RunState::Cancelling | RunState::Succeeded | RunState::Failed
         ),
         RunState::Pausing => matches!(to, RunState::Paused | RunState::Failed),
-        RunState::Paused => matches!(to, RunState::Running | RunState::Cancelling),
+        RunState::Paused => matches!(
+            to,
+            RunState::Preflighting | RunState::Running | RunState::Cancelling
+        ),
         RunState::Cancelling => matches!(to, RunState::Cancelled | RunState::Failed),
-        RunState::Cancelled | RunState::Succeeded | RunState::Failed => false,
+        RunState::Failed => matches!(to, RunState::Preflighting),
+        RunState::Cancelled | RunState::Succeeded => false,
     };
 
     if valid {

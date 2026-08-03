@@ -1,3 +1,4 @@
+pub mod continuous;
 mod file_stat;
 pub mod format;
 pub mod workspace;
@@ -44,6 +45,13 @@ pub struct ProfileResult {
     pub snapshot: SnapshotResult,
     pub inventory: InventoryResult,
     pub file_stat: FileStatResult,
+    pub run_kind: String,
+    pub generation: u64,
+    pub resumed: bool,
+    pub resume_count: u64,
+    pub source_revision_fingerprint: String,
+    pub format: Option<profiler_core::FormatIdentificationResult>,
+    pub snapshots_deleted: u64,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -104,6 +112,7 @@ impl ProfileEngine {
             &collection_id,
             &profiler_database,
             &configuration_fingerprint,
+            true,
         );
         if let Err(error) = &result {
             let _ = store.fail_run(&run_id, error);
@@ -112,7 +121,7 @@ impl ProfileEngine {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn profile_registered_run(
+    pub(crate) fn profile_registered_run(
         request: &ProfileRequest,
         progress: &dyn ProgressSink,
         adapter: MailVaultAdapter,
@@ -122,6 +131,7 @@ impl ProfileEngine {
         collection_id: &str,
         profiler_database: &std::path::Path,
         configuration_fingerprint: &str,
+        complete_run: bool,
     ) -> ProfilerResult<ProfileResult> {
         store.transition_run(run_id, RunState::Preflighting)?;
         progress.send(ProgressEvent {
@@ -199,7 +209,9 @@ impl ProfileEngine {
             &resolver,
             progress,
         )?;
-        store.transition_run(run_id, RunState::Succeeded)?;
+        if complete_run {
+            store.transition_run(run_id, RunState::Succeeded)?;
+        }
 
         Ok(ProfileResult {
             run_id: run_id.to_owned(),
@@ -210,6 +222,13 @@ impl ProfileEngine {
             snapshot,
             inventory,
             file_stat,
+            run_kind: "initial".into(),
+            generation: 1,
+            resumed: false,
+            resume_count: 0,
+            source_revision_fingerprint: String::new(),
+            format: None,
+            snapshots_deleted: 0,
         })
     }
 }

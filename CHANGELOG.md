@@ -2,65 +2,14 @@
 
 All notable changes to MailVault Collection Profiler are documented here.
 
-The project follows Semantic Versioning once the public API reaches a stable release. Alpha builds
-may change local profiler schemas and command contracts through explicit migrations.
+## 0.1.0-alpha.6 — 2026-07-28
 
-## 0.1.0-alpha.4 — 2026-07-21
-
-- Added exact format identification with pinned Siegfried `1.11.6` and PRONOM `v124`.
-- Added versioned PUID assertions, all-match retention, bounded batches, resume checkpoints and format UI/CLI.
-- Added verified sidecar acquisition, Tauri resource bundling and third-party notices.
-- Added migration `0006_exact_format_identification.sql`.
-- Updated English/Persian documentation and sanitized release screenshots.
-- Fixed Windows JSON probing and real-batch execution by resolving the verified signature through
-  `-home` and passing only `default.sig`, avoiding Siegfried 1.11.6's unescaped header path.
-- Added Windows regression coverage for the sidecar command contract.
-
-
-### Added
-
-- Existing workspace inspection, compatibility reporting and explicit open modes.
-- Workspace schema 5 with metadata, append-only review events and review projections.
-- Pre-migration SQLite backup and retained migration-failure marker.
-- Run catalog and completed-run reopening after a full process restart.
-- Single review writer with read-only fallback when another process holds the workspace lock.
-- Finding review statuses, required-note policy and append-only SHA-256 event chains.
-- Review history integrity validation and write-disable fallback after detected tampering.
-- Findings categories for requires-attention, informational evidence, reviewed and all findings.
-- Sanitized JSON summary and CSV finding exports using non-reversible short tokens.
-- CLI commands for workspace inspection, run listing, finding review and sanitized export.
-- Desktop start journey for profiling a new archive or opening an existing workspace.
-- Integration tests for reopen persistence, lock contention, review history and sanitized exports.
-
-### Changed
-
-- Public application version advanced to `0.1.0-alpha.4`; WiX/MSI version maps to `0.1.0.4`.
-- Informational filename/content relationships are separated from warnings requiring attention.
-- Quality, CI and release commands use locked Cargo resolution and validate alpha.3 release notes.
-
-### Fixed during release hardening
-
-- Centralized signed-to-unsigned SQLite count conversion for explorer, review and workspace queries.
-- Split review-event persistence into transactional preparation, insert and projection helpers.
-- Replaced manual guarded division with checked review-completion arithmetic.
-- Replaced the oversized CLI dispatcher with command-specific handlers.
-- Split workspace inspection/opening into focused compatibility, access and integrity helpers.
-- Replaced the flat eight-argument Tauri findings command with a typed request object.
-- Kept the desktop findings request contract synchronized with the nested Tauri payload.
-- Made the documentation screenshot gate recurse through versioned screenshot directories and require the public alpha.3 images explicitly.
-
-### Validation
-
-- Passed the complete Windows quality gate, including strict Clippy, 36 Rust tests, TypeScript, Vite, native desktop compilation and npm audit with 0 vulnerabilities.
-- Completed the full private exact-format run with 13,684/13,684 objects, 13,636 identified, 46 unknown, 0 ambiguous, 0 tool errors, 51 extension mismatches and 64 distinct PUIDs.
-- Verified schema 5-to-6 workspace migration, complete byte coverage and unchanged canonical MailVault SHA-256.
-
-### Security and privacy
-
-- Review data stays outside MailVault and original runtime evidence.
-- Review notes are excluded from application logs and sanitized exports.
-- Existing profiler databases are never created implicitly during reopen.
-- Workspace/source overlap is checked after canonicalization.
+- Unified initial, incremental and rebuild profiling into one crash-resumable pipeline.
+- Added full consistent metadata reconciliation on every source revision while reusing successful SHA-256 file-stat and exact-format results.
+- Added automatic Siegfried/PRONOM identification before a physical run can succeed.
+- Added retryable unavailable/tool-error states, stable collection identity aliases and bounded snapshot retention.
+- Added Windows gates for initial/no-change, real delta, force-kill resume, 100-cycle soak and independent rebuild equivalence.
+- Workspace schema advanced to 7; public application version is `0.1.0-alpha.6` and MSI version is `0.1.0.6`.
 
 ## 0.1.0-alpha.2 — 2026-07-19
 

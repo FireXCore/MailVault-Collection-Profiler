@@ -1,4 +1,4 @@
-# تحویل انتشار GitHub — `0.1.0-alpha.4`
+# تحویل انتشار GitHub — `0.1.0-alpha.6`
 
 این سند ترتیب امن انتقال Candidate آلفا ۴ به مخزن عمومی را مشخص می‌کند. آلفا ۴ قابلیت
 **Exact Format Identification** را به Profiler اضافه می‌کند، اما تا قبل از سبز شدن Windows CI و
@@ -54,7 +54,7 @@ Live Siegfried installation/probe
 Real 13,684-object format run
 ```
 
-مدرک کامل: `docs/VALIDATION_0.1.0-alpha.4.md`.
+مدرک کامل: `docs/VALIDATION_0.1.0-alpha.6.md`.
 
 ## مرحله ۱: ساخت Branch
 
@@ -64,7 +64,7 @@ Real 13,684-object format run
 ```powershell
 git checkout main
 git pull --ff-only
-git checkout -b feat/alpha4-exact-format-identification
+git checkout -b feat/alpha6-exact-format-identification
 ```
 
 فایل‌های بسته را روی Repository جایگزین کن. پوشه‌های `node_modules`، `target`، `dist`، دیتابیس‌های
@@ -87,7 +87,7 @@ npm run tauri:desktop:bundle
 
 ```powershell
 npm run check:release-config
-node .\scripts\check-tag-version.cjs v0.1.0-alpha.4
+node .\scripts\check-tag-version.cjs v0.1.0-alpha.6
 ```
 
 هیچ Tag یا Release تا قبل از سبز شدن این Gate ساخته نشود.
@@ -98,7 +98,7 @@ node .\scripts\check-tag-version.cjs v0.1.0-alpha.4
 git add .
 git status --short
 git commit -m "feat: add exact PRONOM format identification"
-git push -u origin feat/alpha4-exact-format-identification
+git push -u origin feat/alpha6-exact-format-identification
 ```
 
 Pull Request باید تمام Required Checkهای Branch Protection را پاس کند. Diff اصلی شامل ۱۸ فایل
@@ -132,8 +132,8 @@ Raw Profiler DB، Snapshot، Path، Filename، Subject، Domain و Progress JSON
 ```powershell
 git checkout main
 git pull --ff-only
-git tag -a v0.1.0-alpha.4 -m "MailVault Collection Profiler 0.1.0-alpha.4"
-git push origin v0.1.0-alpha.4
+git tag -a v0.1.0-alpha.6 -m "MailVault Collection Profiler 0.1.0-alpha.6"
+git push origin v0.1.0-alpha.6
 ```
 
 Workflow `release.yml` یک Draft Release می‌سازد. Draft باید شامل NSIS، MSI و
@@ -157,7 +157,7 @@ docs/assets/social-preview.png
 Release Notes:
 
 ```text
-docs/releases/v0.1.0-alpha.4.md
+docs/releases/v0.1.0-alpha.6.md
 ```
 
 ## مرز ادعا
