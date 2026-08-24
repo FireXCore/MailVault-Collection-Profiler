@@ -24,7 +24,7 @@
   },
   "devDependencies": {
     "@vscode/tree-sitter-wasm": "^0.3.1",
-    "web-tree-sitter": "^0.26.11"
+    "web-tree-sitter": "^0.26.12"
   },
   "description": "Local-first, read-only physical inventory and technical evidence explorer for MailVault archives.",
   "license": "Apache-2.0",
